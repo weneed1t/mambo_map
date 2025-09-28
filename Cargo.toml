@@ -8,8 +8,8 @@ license = "MIT"
 repository = "https://github.com/weneed1t/mambo_map"
 #documentation = ""
 readme = "README.md"
-#categories = [""]
-keywords = ["multithreaded hashmap hashtable simple lightweight"]
+categories = ["category:data-structures  "]
+keywords = ["multithreaded","hashmap", "hashtable", "simple", "lightweight"]
 
 
 [lints.rust]
