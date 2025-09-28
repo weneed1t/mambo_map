@@ -2,14 +2,15 @@
 name = "mambo_map"
 version = "0.0.1"
 edition = "2021"
-description = ""
+description = "??"
 license = "MIT"
-homepage = ""
-repository = ""
+#homepage = ""
+repository = "https://github.com/weneed1t/mambo_map"
 documentation = ""
-readme = ""
+readme = "README.md"
 categories = [""]
 keywords = [""]
+
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(test)'] }
