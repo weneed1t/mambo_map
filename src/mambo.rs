@@ -98,7 +98,7 @@ impl PartialEq for WhatIdo {
         }
     }
 }
-
+///hashtable
 pub struct Mambo<T: Copy> {
     data_arc: Arc<(f32, Box<[Shard<T>]>)>,
     how_edit_elem_without_update: Box<[i64]>,
@@ -106,6 +106,14 @@ pub struct Mambo<T: Copy> {
 }
 
 impl<T: Copy> Mambo<T> {
+    ///  The num_shards table is divided into independent sections for optimization,
+    ///  the optimal value is num_shards = the number of cores on your processor for multithreaded operation.
+    ///  The redream_factor can be from 1.0 to 10.0, depending on how Mambo
+    ///  is planned to be applied. ->10.0 when a lot of elements are planned (more than 10_000 ).
+    ///  if there are few elements, about 1000 or less, it is better to use values tending to ->1.0.
+    ///  At ->10, memory consumption per element decreases (depending on the system, at 1.0,
+    ///  memory costs per element range from 32 to 64 bytes of overhead memory,
+    ///  at ->10.0 per 1 element costs are reduced to ~10 bytes per element)
     pub fn new(num_shards: usize, redream_factor: f32) -> Result<Self, &'static str> {
         if !(1.0..11.0).contains(&redream_factor) {
             return Err("(1.0..11.0).contains( redream_factor)");
@@ -388,7 +396,12 @@ impl<T: Copy> Mambo<T> {
             usize_smaller_u64: self.usize_smaller_u64,
         }
     }
-
+    /// inserting an element insert(&mut self, key: usize, elem: T) requests a key in u64 format
+    ///  and the element itself, if an element with such a key is already in the table,
+    ///  the error Err("there is already an element") is returned,
+    ///  if the flag already_is_err ==true,
+    ///  then if the element with the equivalent If the key is already in the table,
+    ///  the method will return Ok(), but the old element will remain in the table.
     pub fn insert(&mut self, key: u64, elem: T, already_is_err: bool) -> Result<(), &'static str> {
         self.search_vec(key, |vecta| {
             for x in vecta.iter() {
