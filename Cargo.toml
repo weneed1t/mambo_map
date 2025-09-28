@@ -1,6 +1,6 @@
 [package]
 name = "mambo_map"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
 description = "lightweight, simple, minimally blocking multithreaded hashtable"
 license = "MIT"
