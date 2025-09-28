@@ -2,14 +2,14 @@
 name = "mambo_map"
 version = "0.0.1"
 edition = "2021"
-description = "??"
+description = "lightweight, simple, minimally blocking multithreaded hashtable"
 license = "MIT"
 #homepage = ""
 repository = "https://github.com/weneed1t/mambo_map"
 #documentation = ""
 readme = "README.md"
 #categories = [""]
-#keywords = [""]
+keywords = ["multithreaded hashmap hashtable simple lightweight"]
 
 
 [lints.rust]
