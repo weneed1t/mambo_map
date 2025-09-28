@@ -1,5 +1,4 @@
 use std::{
-    hash::{Hash, Hasher},
     mem,
     sync::{Arc, Mutex, RwLock, TryLockError},
 };
@@ -104,9 +103,10 @@ impl PartialEq for WhatIdo {
 pub struct Mambo<T> {
     data_arc: Arc<(f32, Box<[Shard<T>]>)>,
     how_edit_elem_without_update: Box<[i64]>,
+    usize_smaller_u64: bool,
 }
 
-impl<T: Copy + Hash + PartialEq> Mambo<T> {
+impl<T: Copy> Mambo<T> {
     pub fn new(num_shards: usize, redream_factor: f32) -> Result<Self, &'static str> {
         if !(1.0..11.0).contains(&redream_factor) {
             return Err("(1.0..11.0).contains( redream_factor)");
@@ -124,10 +124,10 @@ impl<T: Copy + Hash + PartialEq> Mambo<T> {
                 )
             })
             .collect();
-
         Ok(Self {
             data_arc: Arc::new((redream_factor, shards)),
             how_edit_elem_without_update: vec![0; num_shards].into_boxed_slice(),
+            usize_smaller_u64: (usize::MAX as u64) < (u64::MAX as u64),
         })
     }
 
@@ -241,14 +241,14 @@ impl<T: Copy + Hash + PartialEq> Mambo<T> {
     }
 
     #[inline(always)]
-    fn search_vec<F>(&mut self, index: usize, operation: F) -> Result<(), &'static str>
+    fn search_vec<F>(&mut self, key: u64, operation: F) -> Result<(), &'static str>
     where
         F: FnOnce(&mut Vec<ElemBox<T>>) -> Result<WhatIdo, &'static str>,
     {
         let mut is_edit = false;
         let mut shard_capasity = 0;
-        let shard_index = index % self.data_arc.1.len();
-        let shard = &self.data_arc.1[shard_index];
+        let shard_index = key % self.data_arc.1.len() as u64;
+        let shard = &self.data_arc.1[shard_index as usize];
 
         {
             let r_lock = shard.2.read().unwrap();
@@ -256,23 +256,23 @@ impl<T: Copy + Hash + PartialEq> Mambo<T> {
                 let vecta = &r_lock[x & 0b1];
 
                 if 0 != vecta.len() {
-                    let mutexer = &mut vecta[index % vecta.len()].lock().unwrap();
+                    let mutexer = &mut vecta[key as usize % vecta.len()].lock().unwrap();
                     if ONPLACE == mutexer.0 {
                         shard_capasity = vecta.len();
 
                         match operation(&mut mutexer.1)? {
                             WhatIdo::REMOVE => {
-                                self.how_edit_elem_without_update[shard_index] = self
-                                    .how_edit_elem_without_update[shard_index]
-                                    .checked_sub(1)
-                                    .ok_or("how_edit_elem_without_update sub is owerflow")?;
+                                self.how_edit_elem_without_update[shard_index as usize] =
+                                    self.how_edit_elem_without_update[shard_index as usize]
+                                        .checked_sub(1)
+                                        .ok_or("how_edit_elem_without_update sub is owerflow")?;
                                 is_edit = true;
                             }
                             WhatIdo::INSERT => {
-                                self.how_edit_elem_without_update[shard_index] = self
-                                    .how_edit_elem_without_update[shard_index]
-                                    .checked_add(1)
-                                    .ok_or("how_edit_elem_without_update add is owerflow")?;
+                                self.how_edit_elem_without_update[shard_index as usize] =
+                                    self.how_edit_elem_without_update[shard_index as usize]
+                                        .checked_add(1)
+                                        .ok_or("how_edit_elem_without_update add is owerflow")?;
                                 is_edit = true;
                             }
                             _ => {
@@ -286,9 +286,21 @@ impl<T: Copy + Hash + PartialEq> Mambo<T> {
         } //unlock read r_lock
         if is_edit {
             // println!("shard_capasity: {}", shard_capasity);
-            if let Some(new_len) = self.new_size_shard(shard_index, shard_capasity) {
+            if let Some(new_len) = self.new_size_shard(shard_index as usize, shard_capasity) {
+                if self.usize_smaller_u64 && (new_len > (usize::MAX as u64)) {
+                    return Err(
+                    "if you see this error, it means that in your system usize::MAX < u64::MAX
+                    and when increasing the size of the shard, a number from PRIME_NUMBERS_TO_TAB was requested that
+                    is greater than usize::MAX. most likely, the usize on this device is 32 or 16 bits, which means that
+                    you can put the orientation points in MamboMambo(redream_factor* (usize:: MAX/4))"
+                    );
+                }
                 // println!("is_edit: {} {}", new_len, shard_capasity);
-                self.resize_shard(index % self.data_arc.1.len(), new_len)?;
+
+                self.resize_shard(
+                    (key % self.data_arc.1.len() as u64) as usize,
+                    new_len as usize,
+                )?;
             }
             return Ok(());
         }
@@ -303,7 +315,7 @@ impl<T: Copy + Hash + PartialEq> Mambo<T> {
     ///  and there will still be room under 25% before exceeding edream_factor,
     ///  the capacity size decreases by PRIME_NUMBERS_TO_TAB[-1].
     #[inline(always)]
-    fn new_size_shard(&mut self, shard_index: usize, shard_capasity: usize) -> Option<usize> {
+    fn new_size_shard(&mut self, shard_index: usize, shard_capasity: usize) -> Option<u64> {
         let shard_i = &mut self.how_edit_elem_without_update[shard_index];
 
         if shard_i.abs_diff(0) < ELEM_NUMS_TO_READ_IN_MUTEX {
@@ -326,14 +338,14 @@ impl<T: Copy + Hash + PartialEq> Mambo<T> {
 
         if elems_in_me as f32 / (shard_capasity as f32 + EPSILON) > self.data_arc.0 {
             if index_my_prime + 1 < PRIME_NUMBERS_TO_TAB.len() {
-                Some(PRIME_NUMBERS_TO_TAB[index_my_prime + 1] as usize)
+                Some(PRIME_NUMBERS_TO_TAB[index_my_prime + 1])
             } else {
                 None
             }
         } else if index_my_prime > 0 {
             let t = PRIME_NUMBERS_TO_TAB[index_my_prime - 1];
             if self.data_arc.0 > (elems_in_me as f32 * SHRINK_THRESHOLD_FACTOR) / t as f32 {
-                Some(PRIME_NUMBERS_TO_TAB[index_my_prime - 1] as usize)
+                Some(PRIME_NUMBERS_TO_TAB[index_my_prime - 1])
             } else {
                 None
             }
@@ -341,7 +353,7 @@ impl<T: Copy + Hash + PartialEq> Mambo<T> {
             None
         }
     }
-
+    ///finds the index of the number closest to the target in PRIME_NUMBER_TO_TAB
     fn difer_index(&self, target: usize) -> usize {
         let target = target as u64;
 
@@ -352,33 +364,45 @@ impl<T: Copy + Hash + PartialEq> Mambo<T> {
             .map(|(index, _)| index)
             .unwrap_or(0)
     }
-
+    /// Some of the Mambo structure data is thread-independent,
+    /// and each copy via arc_clone provides a convenient instance of the Mambo structure that can be used
+    /// in a new thread. all data regarding the elements of the Mambo hash table can be obtained from any
+    /// stream that has an instance of arc_clone.
     pub fn arc_clone(&self) -> Self {
         Self {
             data_arc: Arc::clone(&self.data_arc),
             how_edit_elem_without_update: vec![0; self.data_arc.1.len()].into_boxed_slice(),
+            usize_smaller_u64: self.usize_smaller_u64,
         }
     }
 
-    pub fn insert(&mut self, index: usize, elem: T) -> Result<(), &'static str> {
-        self.search_vec(index, |vecta| {
+    pub fn insert(&mut self, key: u64, elem: T, already_is_err: bool) -> Result<(), &'static str> {
+        self.search_vec(key, |vecta| {
             for x in vecta.iter() {
-                if x.1 == index as u64 {
-                    return Err("there is already an element");
+                //Searching for an element and an equivalent key
+                if x.1 == key as u64 {
+                    if already_is_err {
+                        return Err("there is already an element");
+                    } else {
+                        //if there was no insertion due to the fact that the element is already in the table,
+                        //and already_is_err is true, the operation is considered as a read.
+                        return Ok(WhatIdo::READ);
+                    }
                 }
             }
-            vecta.push((elem, index as u64));
+            //
+            vecta.push((elem, key as u64));
 
             Ok(WhatIdo::INSERT)
-        })
+        }) //search_vec
     }
 
-    pub fn remove(&mut self, index: usize, none_is_err: bool) -> Result<Option<T>, &'static str> {
+    pub fn remove(&mut self, key: u64, none_is_err: bool) -> Result<Option<T>, &'static str> {
         let mut ret_after_remove: Option<T> = None;
 
-        self.search_vec(index, |vecta| {
+        self.search_vec(key, |vecta| {
             for x in 0..vecta.len() {
-                if vecta[x].1 == index as u64 {
+                if vecta[x].1 == key as u64 {
                     let last = *vecta.last().ok_or("ver item is empty")?;
 
                     ret_after_remove = Some(vecta[x].0.clone());
@@ -396,13 +420,13 @@ impl<T: Copy + Hash + PartialEq> Mambo<T> {
         Ok(ret_after_remove)
     }
 
-    pub fn read<RFy>(&mut self, index: usize, ridler: RFy) -> Result<(), &'static str>
+    pub fn read<RFy>(&mut self, key: u64, ridler: RFy) -> Result<(), &'static str>
     where
         RFy: FnOnce(&mut T) -> Result<(), &'static str>,
     {
-        self.search_vec(index, |vecta| {
+        self.search_vec(key, |vecta| {
             for (t, hahs) in vecta.iter_mut() {
-                if *hahs == index as u64 {
+                if *hahs == key as u64 {
                     ridler(t)?;
                     return Ok(WhatIdo::READ);
                 }
@@ -454,7 +478,7 @@ mod tests_n {
                 //println!("{}", elems);
             }
 
-            assert_eq!(mambo.insert(x, x as u32 * 2 as u32), Ok(()));
+            assert_eq!(mambo.insert(x as u64, x as u32 * 2 as u32), Ok(()));
         }
 
         for x in 0..50_000 {
@@ -477,7 +501,7 @@ mod tests_n {
                 elems.abs_diff(inv_x),
                 ELEM_NUMS_TO_READ_IN_MUTEX as usize * shards
             );
-            assert_eq!(mambo.remove(x, true).is_ok(), true);
+            assert_eq!(mambo.remove(x as u64, true).is_ok(), true);
         }
         assert_eq!(mambo.remove(11, true), Err("elem not in map"));
 
@@ -521,7 +545,7 @@ mod tests_n {
                             for o in 0..TEST_ELEMES {
                                 let pai = pair(o);
                                 ra_clone
-                                .read(o, |ind| {
+                                .read(o as u64, |ind| {
                                     assert_eq!(
                                         *ind,
                                         pai as u64,
@@ -542,20 +566,20 @@ mod tests_n {
                                 let index = tt + (NUM_THREADS * 10_000_000 * yy);
 
                                 // println!("in {}     el {}", index,);
-                                ra_clone.insert(index, yy as u64).unwrap();
+                                ra_clone.insert(index as u64, yy as u64).unwrap();
                             }
                             // println!("+++++++++++++++==");
                             for yy in 0..elem_read_write {
                                 //println!("{}", yy);
                                 let index = tt + (NUM_THREADS * 10_000_000 * yy);
-                                let ga = ra_clone.remove(index, true);
+                                let ga = ra_clone.remove(index as u64, true);
 
                                 if ga.is_err() && 200 > TEST_ELEMES {
                                     println!("index {}", index);
 
                                     if ra_clone.data_arc.1.len() == 1 {
                                         for inn in 0..(TEST_ELEMES as f32 * (1.0 / 0.6)) as usize {
-                                            let _ = ra_clone.read(inn, |xx| {
+                                            let _ = ra_clone.read(inn as u64, |xx| {
                                                 print!("| {} ", xx);
                                                 Ok(())
                                             });
@@ -618,7 +642,7 @@ mod tests_n {
                 let std_barrier = Arc::new(std::sync::Barrier::new(num_treads + 1));
 
                 for i in 0..NUM_ELEMS {
-                    mambo.insert(i, 1).unwrap();
+                    mambo.insert(i as u64, 1).unwrap();
                 }
 
                 for _ in 0..num_treads {
@@ -635,7 +659,7 @@ mod tests_n {
                                 od = od.rotate_left(43).wrapping_add(!i as u64);
                             }
                             let _ = ra_clone
-                                .read((od as usize) % NUM_ELEMS, |x| {
+                                .read(od % NUM_ELEMS as u64, |x| {
                                     *x += 1;
                                     Ok(())
                                 })
