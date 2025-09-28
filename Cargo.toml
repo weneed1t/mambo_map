@@ -1,6 +1,6 @@
 [package]
 name = "mambo_map"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 description = "lightweight, simple, minimally blocking multithreaded hashtable"
 license = "MIT"
@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/weneed1t/mambo_map"
 #documentation = ""
 readme = "README.md"
-categories = ["category:data-structures  "]
+#categories = ["category:data-structures"]
 keywords = ["multithreaded","hashmap", "hashtable", "simple", "lightweight"]
 
 
