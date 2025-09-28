@@ -76,7 +76,6 @@ const ONPLACE: bool = true;
 const ELEM_NUMS_TO_READ_IN_MUTEX: u64 = 32;
 type ElemBox<T> = (T, u64);
 type Vecta<T> = Mutex<(bool, Vec<ElemBox<T>>)>;
-
 type Shard<T> = (
     Mutex<u32>,   //locler os resize
     Mutex<usize>, //elems in srard
@@ -100,7 +99,7 @@ impl PartialEq for WhatIdo {
     }
 }
 
-pub struct Mambo<T> {
+pub struct Mambo<T: Copy> {
     data_arc: Arc<(f32, Box<[Shard<T>]>)>,
     how_edit_elem_without_update: Box<[i64]>,
     usize_smaller_u64: bool,
@@ -195,6 +194,7 @@ impl<T: Copy> Mambo<T> {
             let v0_old = &r_lock[0];
             let v1_new = &r_lock[1];
             //iterating through the elements in the old vector and moving the elements to the new one
+            //let mut elems_in_shard: usize = 0;
             for x in v0_old.iter() {
                 let mut temp_old_mutexer = x.lock().unwrap();
                 /*if the elements were moved before they were moved, an error is triggered.
@@ -214,7 +214,7 @@ impl<T: Copy> Mambo<T> {
                         v1_new[old_elem.1 as usize % v1_new.len()].lock().unwrap();
 
                     new_mutex_elem.1.push(*old_elem);
-                    //self.insert_in_mutex(obje_old, &mut new_mutex_elem.1)?;
+                    //elems_in_shard += 1;
                 }
                 //minimizing memory consumption, removing unused vectors
                 if temp_old_mutexer.1.capacity() > 0 {
@@ -286,39 +286,52 @@ impl<T: Copy> Mambo<T> {
         } //unlock read r_lock
         if is_edit {
             // println!("shard_capasity: {}", shard_capasity);
-            if let Some(new_len) = self.new_size_shard(shard_index as usize, shard_capasity) {
-                if self.usize_smaller_u64 && (new_len > (usize::MAX as u64)) {
-                    return Err(
+            return self.is_resize_shard(shard_index as usize, shard_capasity, false);
+        }
+
+        Err("access error, constant employment")
+    }
+    fn is_resize_shard(
+        &mut self,
+        shard_index: usize,
+        shard_capasity: usize,
+        force_edit_global_counter: bool,
+    ) -> Result<(), &'static str> {
+        if let Some(new_len) = self.new_size_shard(
+            shard_index as usize,
+            shard_capasity,
+            force_edit_global_counter,
+        ) {
+            if self.usize_smaller_u64 && (new_len > (usize::MAX as u64)) {
+                return Err(
                     "if you see this error, it means that in your system usize::MAX < u64::MAX
                     and when increasing the size of the shard, a number from PRIME_NUMBERS_TO_TAB was requested that
                     is greater than usize::MAX. most likely, the usize on this device is 32 or 16 bits, which means that
                     you can put the orientation points in MamboMambo(redream_factor* (usize:: MAX/4))"
                     );
-                }
-                // println!("is_edit: {} {}", new_len, shard_capasity);
-
-                self.resize_shard(
-                    (key % self.data_arc.1.len() as u64) as usize,
-                    new_len as usize,
-                )?;
             }
-            return Ok(());
-        }
+            // println!("is_edit: {} {}", new_len, shard_capasity);
 
-        Err("access error, constant employment")
+            self.resize_shard(shard_index, new_len as usize)?;
+        }
+        Ok(())
     }
 
     ///Resizing should only be done if the occupancy rate is higher than the redream_factor.
     /// if it is higher and these are not the last elements in PRIME_NUMBERS_TO_TAB,
     /// then its size becomes PRIME_NUMBERS_TO_TAB[+1],
     /// if the number of elements is so large that you can use PRIME_NUMBERS_TO_TAB[-1]
-    ///  and there will still be room under 25% before exceeding edream_factor,
+    ///  and there will still be room under SHRINK_THRESHOLD_FACTOR before exceeding redream_factor,
     ///  the capacity size decreases by PRIME_NUMBERS_TO_TAB[-1].
-    #[inline(always)]
-    fn new_size_shard(&mut self, shard_index: usize, shard_capasity: usize) -> Option<u64> {
+    fn new_size_shard(
+        &mut self,
+        shard_index: usize,
+        shard_capasity: usize,
+        force_edit_global_counter: bool,
+    ) -> Option<u64> {
         let shard_i = &mut self.how_edit_elem_without_update[shard_index];
 
-        if shard_i.abs_diff(0) < ELEM_NUMS_TO_READ_IN_MUTEX {
+        if !force_edit_global_counter && shard_i.abs_diff(0) < ELEM_NUMS_TO_READ_IN_MUTEX {
             return None;
         }
 
@@ -396,7 +409,11 @@ impl<T: Copy> Mambo<T> {
             Ok(WhatIdo::INSERT)
         }) //search_vec
     }
-
+    /// to remove the fragment. you need to return the key key: u64
+    /// if none_is_err == true and the element is not in the table, Ok(None) is returned,
+    /// if none_is_err == false, Err("element not in map").
+    /// if an element with the same key is in the table,
+    ///  it is deleted from the table and returned as Ok(Some(T .clone()))
     pub fn remove(&mut self, key: u64, none_is_err: bool) -> Result<Option<T>, &'static str> {
         let mut ret_after_remove: Option<T> = None;
 
@@ -419,7 +436,18 @@ impl<T: Copy> Mambo<T> {
         })?;
         Ok(ret_after_remove)
     }
-
+    ///!Attention!! DO NOT CALL read INSIDE THE read CLOSURE!!! THIS MAY CAUSE THE THREAD TO SELF-LOCK!!
+    /// -
+    ///  reading. to access an item for reading, you need to request it using the key.
+    ///  and the element is read and processed in the
+    ///  RFy closure: FnOnce(&mut T) -> Result<(), &'static str>,
+    ///  since &mut T is Mutex.lock(). while processing is taking place in read<RFy>,
+    ///  the shard in which this element is located cannot:
+    ///  1 change its size.
+    ///  2: since Mutex contains elements from 0 to redream_factor
+    ///  (a parameter in the Mamdo::new constructor),
+    ///  access in other threads for elements in one Mutex is blocked.
+    ///   to summarize, the faster the closure is resolved inside read, the better.
     pub fn read<RFy>(&mut self, key: u64, ridler: RFy) -> Result<(), &'static str>
     where
         RFy: FnOnce(&mut T) -> Result<(), &'static str>,
@@ -434,7 +462,15 @@ impl<T: Copy> Mambo<T> {
             Err("element not in map")
         })
     }
-
+    /// The number of elements in the hash table.
+    ///  returns the number of all items in the table.note.
+    ///  for optimization in multithreaded environments,
+    ///
+    /// !!!item count! changes do NOT occur EVERY TIME an item is DELETED/INSERTED.!!!
+    ///  with a large number of elements and in a multithreaded environment,
+    ///  it may not be critical, but when there are few elements, when elems_im_me is called,
+    ///  it may return 0 even if there are elements in Mambo.
+    ///  This is a forced decision to increase productivity.
     pub fn elems_im_me(&self) -> Result<usize, &'static str> {
         let mut elems = 0_usize;
         for x in self.data_arc.1.iter() {
@@ -447,10 +483,56 @@ impl<T: Copy> Mambo<T> {
     }
 }
 
+impl<T: Copy> Drop for Mambo<T> {
+    ///  deleting a Mambo instance. Since Mambo uses only secure rust APIs,
+    ///  it does not need to implement the Drop trace, but since when inserting
+    ///  or deleting an element, calls insert() or remove() do not change the global
+    ///  element counter every time these methods are called so that the discrepancy
+    ///  is minimal, each time an instance of Mambo is deleted, the value is forcibly
+    ///  saved from a local variable. to the global internal Mutex
+    fn drop(&mut self) {
+        let mut ive = vec![0usize; 0];
+
+        for (shard, shard_i) in self
+            .data_arc
+            .1
+            .iter()
+            .zip(self.how_edit_elem_without_update.iter())
+        {
+            let mut mutexer = shard.1.lock().unwrap();
+            let shard_capasity = {
+                let rwr = shard.2.read().unwrap();
+                let len_r1 = rwr[1].len();
+                if 0 != len_r1 {
+                    len_r1
+                } else {
+                    rwr[0].len()
+                }
+            };
+
+            if *shard_i > 0 {
+                *mutexer = mutexer.checked_add(shard_i.abs_diff(0) as usize).unwrap();
+                //println!("mux {}", shard_i.abs_diff(0));
+            } else {
+                *mutexer = mutexer.checked_sub(shard_i.abs_diff(0) as usize).unwrap();
+            }
+            //println!("len: {}", shard_capasity);
+            ive.push(shard_capasity);
+        }
+
+        for (shard_index, &shard_capasity) in ive.iter().enumerate() {
+            self.is_resize_shard(shard_index as usize, shard_capasity, true)
+                .unwrap();
+            //println!("drop{}", shard_index);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests_n {
 
     use super::*;
+
     // use core::time;
     //use std::sync::Arc;
     use std::thread;
@@ -478,7 +560,7 @@ mod tests_n {
                 //println!("{}", elems);
             }
 
-            assert_eq!(mambo.insert(x as u64, x as u32 * 2 as u32), Ok(()));
+            assert_eq!(mambo.insert(x as u64, x as u32 * 2 as u32, false), Ok(()));
         }
 
         for x in 0..50_000 {
@@ -566,7 +648,7 @@ mod tests_n {
                                 let index = tt + (NUM_THREADS * 10_000_000 * yy);
 
                                 // println!("in {}     el {}", index,);
-                                ra_clone.insert(index as u64, yy as u64).unwrap();
+                                ra_clone.insert(index as u64, yy as u64, false).unwrap();
                             }
                             // println!("+++++++++++++++==");
                             for yy in 0..elem_read_write {
@@ -642,7 +724,7 @@ mod tests_n {
                 let std_barrier = Arc::new(std::sync::Barrier::new(num_treads + 1));
 
                 for i in 0..NUM_ELEMS {
-                    mambo.insert(i as u64, 1).unwrap();
+                    mambo.insert(i as u64, 1, false).unwrap();
                 }
 
                 for _ in 0..num_treads {
@@ -690,6 +772,29 @@ mod tests_n {
                 }
             }
         }
+        // assert!(false);
+    }
+
+    #[test]
+    fn read_write_ers() {
+        let mambo = Mambo::<u64>::new(1, 10.0).unwrap();
+        let std_start = Instant::now();
+        let elem_in_cycle = 10u64;
+        let cycles = 200_00u64;
+        for xx in (1..cycles).step_by(1) {
+            let mut clom = mambo.arc_clone();
+            //println!("{}", clom.elems_im_me().unwrap());
+            for yy in 0..elem_in_cycle {
+                clom.insert((yy * cycles * 100) + xx, 0, true).unwrap();
+            }
+        }
+
+        println!(
+            "{}Mop/S: {:.4}",
+            "only read  ",
+            (elem_in_cycle * cycles) as f64 / std_start.elapsed().as_micros() as f64
+        );
+
         // assert!(false);
     }
 }
