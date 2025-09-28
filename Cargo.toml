@@ -8,8 +8,8 @@ license = "MIT"
 repository = "https://github.com/weneed1t/mambo_map"
 #documentation = ""
 readme = "README.md"
-categories = [""]
-keywords = [""]
+#categories = [""]
+#keywords = [""]
 
 
 [lints.rust]
