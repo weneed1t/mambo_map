@@ -1,6 +1,6 @@
 [package]
 name = "mambo_map"
-version = "0.0.6"
+version = "0.0.7"
 edition = "2021"
 description = "lightweight, simple, minimally blocking multithreaded hashtable"
 license = "MIT"
@@ -9,7 +9,7 @@ repository = "https://github.com/weneed1t/mambo_map"
 #documentation = ""
 readme = "README.md"
 #categories = ["category:data-structures"]
-keywords = ["multithreaded","hashmap", "hashtable", "simple", "lightweight"]
+keywords = ["multithreaded", "hashmap", "hashtable", "simple", "lightweight"]
 
 
 [lints.rust]
@@ -19,8 +19,8 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(test)'] }
 
 [profile.release]
 
-strip = "symbols"       # Удаляет символы и отладочную информацию :cite[3]:cite[6]
-#overflow-checks = false # Отключает проверки переполнения :cite[3]
-codegen-units = 1  # Снижает параллелизацию для лучшей оптимизации :cite[2]:cite[6]
-lto = "fat"  # Включает полную LTO-оптимизацию :cite[2]:cite[6]
-opt-level = 3  # Максимальная оптимизация скорости выполнения :cite[2]:cite[3]
+strip = "symbols"
+
+codegen-units = 1
+lto = "fat"       #
+opt-level = 3

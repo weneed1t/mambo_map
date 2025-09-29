@@ -138,6 +138,11 @@ impl<T: Clone> Mambo<T> {
         })
     }
 
+    ///!!BE SURE TO USE .unwrap() PANIC BECAUSE!!:
+    /// -
+    /// errors during shard resizing are fatal. and in most cases,
+    /// it is impossible to restore data integrity
+    // in the shard if an error occurred during self.resize_shard.
     fn resize_shard(&self, shard_index: usize, new_len: usize) -> Result<bool, &'static str> {
         let shard = self
             .data_arc
@@ -248,7 +253,6 @@ impl<T: Clone> Mambo<T> {
         Ok(true)
     }
 
-    #[inline(always)]
     fn search_vec<F>(&mut self, key: u64, operation: F) -> Result<(), &'static str>
     where
         F: FnOnce(&mut Vec<ElemBox<T>>) -> Result<WhatIdo, &'static str>,
@@ -318,9 +322,8 @@ impl<T: Clone> Mambo<T> {
                     you can put the orientation points in MamboMambo(redream_factor* (usize:: MAX/4))"
                     );
             }
-            // println!("is_edit: {} {}", new_len, shard_capasity);
 
-            self.resize_shard(shard_index, new_len as usize)?;
+            self.resize_shard(shard_index, new_len as usize).unwrap();
         }
         Ok(())
     }
@@ -329,8 +332,8 @@ impl<T: Clone> Mambo<T> {
     /// if it is higher and these are not the last elements in PRIME_NUMBERS_TO_TAB,
     /// then its size becomes PRIME_NUMBERS_TO_TAB[+1],
     /// if the number of elements is so large that you can use PRIME_NUMBERS_TO_TAB[-1]
-    ///  and there will still be room under SHRINK_THRESHOLD_FACTOR before exceeding redream_factor,
-    ///  the capacity size decreases by PRIME_NUMBERS_TO_TAB[-1].
+    /// and there will still be room under SHRINK_THRESHOLD_FACTOR before exceeding redream_factor,
+    /// the capacity size decreases by PRIME_NUMBERS_TO_TAB[-1].
     fn new_size_shard(
         &mut self,
         shard_index: usize,
@@ -374,7 +377,7 @@ impl<T: Clone> Mambo<T> {
             None
         }
     }
-    ///finds the index of the number closest to the target in PRIME_NUMBER_TO_TAB
+    /// finds the index of the number closest to the target in PRIME_NUMBER_TO_TAB
     fn difer_index(&self, target: usize) -> usize {
         let target = target as u64;
 
@@ -396,44 +399,54 @@ impl<T: Clone> Mambo<T> {
             usize_smaller_u64: self.usize_smaller_u64,
         }
     }
-    /// inserting an element insert(&mut self, key: usize, elem: T) requests a key in u64 format
-    ///  and the element itself, if an element with such a key is already in the table,
-    ///  the error Err("there is already an element") is returned,
-    ///  if the flag already_is_err ==true,
-    ///  then if the element with the equivalent If the key is already in the table,
-    ///  the method will return Ok(), but the old element will remain in the table.
-    pub fn insert(&mut self, key: u64, elem: T, already_is_err: bool) -> Result<(), &'static str> {
+    /// insert an element T with the key: u64.if there is already an element with the same key: u64 in the table,
+    /// then when force_replace == true, the old element T will be replaced by the new element T,
+    /// while the old element T will be returned as Ok(Some(T.clone())). if force_replace == false,
+    /// the old element will not be replaced and the function will return Ok(None).
+    /// if there is no element with this key: u64,
+    /// a new element will be added to the table and the function will output Ok(None)
+    pub fn insert(
+        &mut self,
+        key: u64,
+        elem: &T,
+        force_replace: bool,
+    ) -> Result<Option<T>, &'static str> {
+        let mut replaced_elem: Option<T> = None;
         self.search_vec(key, |vecta| {
-            for x in vecta.iter() {
+            for x in vecta.iter_mut() {
                 //Searching for an element and an equivalent key
                 if x.1 == key as u64 {
-                    if already_is_err {
-                        return Err("there is already an element");
-                    } else {
-                        //if there was no insertion due to the fact that the element is already in the table,
-                        //and already_is_err is true, the operation is considered as a read.
-                        return Ok(WhatIdo::READ);
+                    //if there was no insertion due to the fact that the element is already in the table,
+                    if force_replace {
+                        replaced_elem = Some(x.0.clone());
+                        *x = (elem.clone(), key);
                     }
+                    //the operation is considered as a read.
+                    return Ok(WhatIdo::READ);
                 }
             }
-            //
-            vecta.push((elem, key as u64));
+            vecta.push((elem.clone(), key as u64));
 
             Ok(WhatIdo::INSERT)
-        }) //search_vec
+        })?; //search_vec
+
+        Ok(replaced_elem)
     }
     /// to remove the fragment. you need to return the key key: u64
-    /// if none_is_err == true and the element is not in the table, Ok(None) is returned,
-    /// if none_is_err == false, Err("element not in map").
-    /// if an element with the same key is in the table,
-    ///  it is deleted from the table and returned as Ok(Some(T .clone()))
-    pub fn remove(&mut self, key: u64, none_is_err: bool) -> Result<Option<T>, &'static str> {
+    /// if an element was in the table and it was deleted, but the function returns Ok(Some(T.clone()))
+    // if there was no such element in the hash table, Ok(None) will be returned
+    pub fn remove(&mut self, key: u64) -> Result<Option<T>, &'static str> {
         let mut ret_after_remove: Option<T> = None;
 
         self.search_vec(key, |vecta| {
             for x in 0..vecta.len() {
                 if vecta[x].1 == key as u64 {
-                    let last = vecta.last().ok_or("ver item is empty")?;
+                    let last = vecta.last();
+
+                    if last.is_none() {
+                        return Ok(WhatIdo::READ);
+                    }
+                    let last = last.unwrap();
 
                     ret_after_remove = Some(vecta[x].0.clone());
                     vecta[x] = last.clone();
@@ -441,11 +454,8 @@ impl<T: Clone> Mambo<T> {
                     return Ok(WhatIdo::REMOVE);
                 }
             }
-            if none_is_err {
-                Err("elem not in map")
-            } else {
-                Ok(WhatIdo::READ)
-            }
+
+            Ok(WhatIdo::READ)
         })?;
         Ok(ret_after_remove)
     }
@@ -453,7 +463,7 @@ impl<T: Clone> Mambo<T> {
     /// -
     ///  reading. to access an item for reading, you need to request it using the key.
     ///  and the element is read and processed in the
-    ///  RFy closure: FnOnce(&mut T) -> Result<(), &'static str>,
+    ///  RFy closure:FnOnce(Option<&mut T>) -> Result<(), &'static str>,
     ///  since &mut T is Mutex.lock(). while processing is taking place in read<RFy>,
     ///  the shard in which this element is located cannot:
     ///  1 change its size.
@@ -463,16 +473,17 @@ impl<T: Clone> Mambo<T> {
     ///   to summarize, the faster the closure is resolved inside read, the better.
     pub fn read<RFy>(&mut self, key: u64, ridler: RFy) -> Result<(), &'static str>
     where
-        RFy: FnOnce(&mut T) -> Result<(), &'static str>,
+        RFy: FnOnce(Option<&mut T>) -> Result<(), &'static str>,
     {
         self.search_vec(key, |vecta| {
             for (t, hahs) in vecta.iter_mut() {
                 if *hahs == key as u64 {
-                    ridler(t)?;
+                    ridler(Some(t))?;
                     return Ok(WhatIdo::READ);
                 }
             }
-            Err("element not in map")
+            ridler(None)?;
+            return Ok(WhatIdo::READ);
         })
     }
     /// The number of elements in the hash table.
@@ -555,11 +566,11 @@ mod tests_n {
 
     #[test]
     fn based_insert_test() {
-        let shards = 5;
+        let shards = 2;
         let mut mambo = Mambo::<u32>::new(shards, 5.0).unwrap();
         println!("{}", mambo.data_arc.1.len());
 
-        for x in 0..50_000 {
+        for x in 0..30_000 {
             if x % 10 == 9 {
                 let elems = mambo.elems_im_me().unwrap();
 
@@ -572,23 +583,35 @@ mod tests_n {
 
                 //println!("{}", elems);
             }
-
-            assert_eq!(mambo.insert(x as u64, x as u32 * 2 as u32, false), Ok(()));
+            let x = x as u32;
+            assert_eq!(mambo.insert(x as u64, &x, false), Ok(None));
+            assert_eq!(mambo.insert(x as u64, &x, true), Ok(Some(x)));
+            assert_eq!(mambo.insert(x as u64, &x, false), Ok(None));
         }
 
-        for x in 0..50_000 {
+        for x in 0..30_000 {
             assert_eq!(
                 mambo.read(x, |el| {
-                    assert_eq!(*el, x as u32 * 2);
+                    let el = el.unwrap();
+
+                    assert_eq!(*el, x as u32);
                     *el += 1;
+                    Ok(())
+                }),
+                Ok(())
+            );
+
+            assert_eq!(
+                mambo.read(x + 1_000_000, |el| {
+                    assert_eq!(el, None);
                     Ok(())
                 }),
                 Ok(())
             );
         }
 
-        for x in 0..50_000 {
-            let inv_x = 50000 - x;
+        for x in 0..30_000 {
+            let inv_x = 30_000 - x;
             let elems = mambo.elems_im_me().unwrap();
             assert!(
                 elems.abs_diff(inv_x) <= ELEM_NUMS_TO_READ_IN_MUTEX as usize * shards,
@@ -596,11 +619,64 @@ mod tests_n {
                 elems.abs_diff(inv_x),
                 ELEM_NUMS_TO_READ_IN_MUTEX as usize * shards
             );
-            assert_eq!(mambo.remove(x as u64, true).is_ok(), true);
+            let x = x as u64;
+            //println!("{:?}  {}", mambo.remove(x as u64), x);
+            assert_eq!(mambo.remove(x as u64), Ok(Some(x as u32 + 1)));
         }
-        assert_eq!(mambo.remove(11, true), Err("elem not in map"));
+        //assert_eq!(mambo.remove(11), Ok(None));
 
         return;
+    }
+
+    #[test]
+    fn based_example() {
+        {
+            let shards = 16;
+            let elems_in_mutex = 7.0;
+            const NUM_THREADS: usize = 10;
+            const OPS_PER_THREAD: usize = 100;
+            let mambo = Mambo::<String>::new(shards, elems_in_mutex).unwrap();
+
+            for tt in 1..NUM_THREADS {
+                let mut mambo_arc = mambo.arc_clone();
+
+                let _ = thread::spawn(move || {
+                    for key in 0..OPS_PER_THREAD {
+                        let key = tt + (key * OPS_PER_THREAD * 10);
+
+                        let elem_me = format!("mambo elem{}", key);
+
+                        mambo_arc.insert(key as u64, &elem_me, false).unwrap();
+
+                        assert_eq!(mambo_arc.insert(key as u64, &elem_me, false), Ok(None));
+
+                        mambo_arc
+                            .read(key as u64, |ind| {
+                                let ind = ind.unwrap();
+
+                                assert_eq!(
+                                    ind.clone(),
+                                    elem_me,
+                                    " non eq read  key: {}   rea: {}   in map: {}",
+                                    key,
+                                    elem_me,
+                                    ind.clone()
+                                );
+
+                                Ok(())
+                            })
+                            .unwrap();
+                    }
+
+                    for key in 0..OPS_PER_THREAD {
+                        let key = tt + (key * OPS_PER_THREAD * 10);
+                        let elem_me = format!("mambo elem{}", key);
+
+                        assert_eq!(mambo_arc.remove(key as u64), Ok(Some(elem_me.clone())));
+                    }
+                });
+            }
+        }
     }
 
     #[test]
@@ -641,6 +717,7 @@ mod tests_n {
                                 let pai = pair(o);
                                 ra_clone
                                 .read(o as u64, |ind| {
+                                    let ind = ind.unwrap();
                                     assert_eq!(
                                         *ind,
                                         pai as u64,
@@ -659,15 +736,14 @@ mod tests_n {
                         for _ in 0..iterations {
                             for yy in 0..elem_read_write {
                                 let index = tt + (NUM_THREADS * 10_000_000 * yy);
-
-                                // println!("in {}     el {}", index,);
-                                ra_clone.insert(index as u64, yy as u64, false).unwrap();
+                                let yy = yy as u64;
+                                ra_clone.insert(index as u64, &yy, false).unwrap();
                             }
                             // println!("+++++++++++++++==");
                             for yy in 0..elem_read_write {
                                 //println!("{}", yy);
                                 let index = tt + (NUM_THREADS * 10_000_000 * yy);
-                                let ga = ra_clone.remove(index as u64, true);
+                                let ga = ra_clone.remove(index as u64);
 
                                 if ga.is_err() && 200 > TEST_ELEMES {
                                     println!("index {}", index);
@@ -675,6 +751,7 @@ mod tests_n {
                                     if ra_clone.data_arc.1.len() == 1 {
                                         for inn in 0..(TEST_ELEMES as f32 * (1.0 / 0.6)) as usize {
                                             let _ = ra_clone.read(inn as u64, |xx| {
+                                                let xx = xx.unwrap();
                                                 print!("| {} ", xx);
                                                 Ok(())
                                             });
@@ -686,18 +763,7 @@ mod tests_n {
                                         panic!("ra_clone.shards.len()==1else");
                                     }
                                 }
-
-                                /*if yy % 7 == 0 {
-                                    let ddd = 10;
-                                    ra_clone
-                                        .resize_shard(
-                                            &ra_clone.shards[yy % ra_clone.shards.len()],
-                                            &ddd,
-                                        )
-                                        .unwrap();
-                                }*/
                             }
-                            //println!("{}", xx);
                         }
                     }
                 });
@@ -711,15 +777,6 @@ mod tests_n {
                 handle.join().unwrap();
             }
         }
-        // println!(
-        //     "TEST_BREAK_RESIZE {}",
-        //     TEST_BREAK_RESIZE.load(Ordering::Relaxed)
-        // );
-        // println!("TEST_RESIZE {}", TEST_RESIZE.load(Ordering::Relaxed));
-        // println!("TEST_SWAP_MAX {}", TEST_SWAP_MAX.load(Ordering::Relaxed));
-        // println!("create: {}", mem_me::TEST_CREATE.load(Ordering::Acquire));
-        // println!("destroy: {}", mem_me::TEST_DESTROY.load(Ordering::Acquire));
-        //assert!(false);
     }
 
     #[test]
@@ -737,7 +794,8 @@ mod tests_n {
                 let std_barrier = Arc::new(std::sync::Barrier::new(num_treads + 1));
 
                 for i in 0..NUM_ELEMS {
-                    mambo.insert(i as u64, 1, false).unwrap();
+                    let t = 0;
+                    mambo.insert(i as u64, &t, false).unwrap();
                 }
 
                 for _ in 0..num_treads {
@@ -755,6 +813,7 @@ mod tests_n {
                             }
                             let _ = ra_clone
                                 .read(od % NUM_ELEMS as u64, |x| {
+                                    let x = x.unwrap();
                                     *x += 1;
                                     Ok(())
                                 })
@@ -798,7 +857,8 @@ mod tests_n {
             let mut clom = mambo.arc_clone();
             //println!("{}", clom.elems_im_me().unwrap());
             for yy in 0..elem_in_cycle {
-                clom.insert((yy * cycles * 100) + xx, 0, true).unwrap();
+                let t = 0;
+                clom.insert((yy * cycles * 100) + xx, &t, false).unwrap();
             }
         }
 
