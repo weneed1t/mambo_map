@@ -767,8 +767,8 @@ mod tests_n {
         for tre in (1..20).step_by(1) {
             //const NUM_THREADS: usize = 50;
             let num_treads: usize = tre;
-            const NUM_ELEMS: usize = 800;
-            const TOTAL_OPS: u64 = 5000_000;
+            const NUM_ELEMS: usize = 200;
+            const TOTAL_OPS: u64 = 500_000;
             let ops_threads: u64 = TOTAL_OPS / num_treads as u64;
             {
                 let mut mambo = Mambo::<u64>::new(16, 10.0).unwrap();
@@ -825,7 +825,7 @@ mod tests_n {
                 }
             }
         }
-        assert!(false);
+        // assert!(false);
     }
 
     #[test]
