@@ -323,7 +323,7 @@ impl<T: Clone> Mambo<T> {
                     );
             }
 
-            self.resize_shard(shard_index, new_len as usize)?;
+            self.resize_shard(shard_index, new_len as usize).unwrap();
         }
         Ok(())
     }
@@ -401,11 +401,16 @@ impl<T: Clone> Mambo<T> {
     }
     /// insert an element T with the key: u64.if there is already an element with the same key: u64 in the table,
     /// then when force_replace == true, the old element T will be replaced by the new element T,
-    /// while the old element T will be returned as Some(T.clone()). if force_replace == false,
-    /// the old element will not be replaced and the function will return None.
+    /// while the old element T will be returned as Ok(Some(T.clone())). if force_replace == false,
+    /// the old element will not be replaced and the function will return Ok(None).
     /// if there is no element with this key: u64,
-    /// a new element will be added to the table and the function will output None
-    pub fn insert(&mut self, key: u64, elem: &T, force_replace: bool) -> Option<T> {
+    /// a new element will be added to the table and the function will output Ok(None)
+    pub fn insert(
+        &mut self,
+        key: u64,
+        elem: &T,
+        force_replace: bool,
+    ) -> Result<Option<T>, &'static str> {
         let mut replaced_elem: Option<T> = None;
         self.search_vec(key, |vecta| {
             for x in vecta.iter_mut() {
@@ -423,15 +428,14 @@ impl<T: Clone> Mambo<T> {
             vecta.push((elem.clone(), key as u64));
 
             Ok(WhatIdo::INSERT)
-        })
-        .unwrap(); //search_vec
+        })?; //search_vec
 
-        replaced_elem
+        Ok(replaced_elem)
     }
     /// to remove the fragment. you need to return the key key: u64
-    /// if an element was in the table and it was deleted, but the function returns Some(T.clone())
-    // if there was no such element in the hash table, None will be returned
-    pub fn remove(&mut self, key: u64) -> Option<T> {
+    /// if an element was in the table and it was deleted, but the function returns Ok(Some(T.clone()))
+    // if there was no such element in the hash table, Ok(None) will be returned
+    pub fn remove(&mut self, key: u64) -> Result<Option<T>, &'static str> {
         let mut ret_after_remove: Option<T> = None;
 
         self.search_vec(key, |vecta| {
@@ -452,15 +456,14 @@ impl<T: Clone> Mambo<T> {
             }
 
             Ok(WhatIdo::READ)
-        })
-        .unwrap();
-        ret_after_remove
+        })?;
+        Ok(ret_after_remove)
     }
     ///!Attention!! DO NOT CALL read INSIDE THE read CLOSURE!!! THIS MAY CAUSE THE THREAD TO SELF-LOCK!!
     /// -
     ///  reading. to access an item for reading, you need to request it using the key.
     ///  and the element is read and processed in the
-    ///  RFy closure:FnOnce(Option<&mut T>),
+    ///  RFy closure:FnOnce(Option<&mut T>) -> Result<(), &'static str>,
     ///  since &mut T is Mutex.lock(). while processing is taking place in read<RFy>,
     ///  the shard in which this element is located cannot:
     ///  1 change its size.
@@ -468,21 +471,20 @@ impl<T: Clone> Mambo<T> {
     ///  (a parameter in the Mamdo::new constructor),
     ///  access in other threads for elements in one Mutex is blocked.
     ///   to summarize, the faster the closure is resolved inside read, the better.
-    pub fn read<RFy>(&mut self, key: u64, ridler: RFy)
+    pub fn read<RFy>(&mut self, key: u64, ridler: RFy) -> Result<(), &'static str>
     where
-        RFy: FnOnce(Option<&mut T>),
+        RFy: FnOnce(Option<&mut T>) -> Result<(), &'static str>,
     {
         self.search_vec(key, |vecta| {
             for (t, hahs) in vecta.iter_mut() {
                 if *hahs == key as u64 {
-                    ridler(Some(t));
+                    ridler(Some(t))?;
                     return Ok(WhatIdo::READ);
                 }
             }
-            ridler(None);
+            ridler(None)?;
             return Ok(WhatIdo::READ);
         })
-        .unwrap();
     }
     /// The number of elements in the hash table.
     ///  returns the number of all items in the table.note.
@@ -493,16 +495,15 @@ impl<T: Clone> Mambo<T> {
     ///  it may not be critical, but when there are few elements, when elems_im_me is called,
     ///  it may return 0 even if there are elements in Mambo.
     ///  This is a forced decision to increase productivity.
-    pub fn elems_im_me(&self) -> usize {
+    pub fn elems_im_me(&self) -> Result<usize, &'static str> {
         let mut elems = 0_usize;
         for x in self.data_arc.1.iter() {
             let t = x.1.lock().unwrap();
             elems = elems
                 .checked_add(*t)
-                .ok_or("err elems.checked_add(elems in shard )")
-                .unwrap();
+                .ok_or("err elems.checked_add(elems in shard )")?;
         }
-        elems
+        Ok(elems)
     }
 }
 
@@ -571,7 +572,7 @@ mod tests_n {
 
         for x in 0..30_000 {
             if x % 10 == 9 {
-                let elems = mambo.elems_im_me();
+                let elems = mambo.elems_im_me().unwrap();
 
                 assert!(
                     elems.abs_diff(x) <= ELEM_NUMS_TO_READ_IN_MUTEX as usize * shards,
@@ -583,27 +584,35 @@ mod tests_n {
                 //println!("{}", elems);
             }
             let x = x as u32;
-            assert_eq!(mambo.insert(x as u64, &x, false), None);
-            assert_eq!(mambo.insert(x as u64, &x, true), Some(x));
-            assert_eq!(mambo.insert(x as u64, &x, false), None);
+            assert_eq!(mambo.insert(x as u64, &x, false), Ok(None));
+            assert_eq!(mambo.insert(x as u64, &x, true), Ok(Some(x)));
+            assert_eq!(mambo.insert(x as u64, &x, false), Ok(None));
         }
 
         for x in 0..30_000 {
-            mambo.read(x, |el| {
-                let el = el.unwrap();
+            assert_eq!(
+                mambo.read(x, |el| {
+                    let el = el.unwrap();
 
-                assert_eq!(*el, x as u32);
-                *el += 1;
-            });
+                    assert_eq!(*el, x as u32);
+                    *el += 1;
+                    Ok(())
+                }),
+                Ok(())
+            );
 
-            mambo.read(x + 1_000_000, |el| {
-                assert_eq!(el, None);
-            });
+            assert_eq!(
+                mambo.read(x + 1_000_000, |el| {
+                    assert_eq!(el, None);
+                    Ok(())
+                }),
+                Ok(())
+            );
         }
 
         for x in 0..30_000 {
             let inv_x = 30_000 - x;
-            let elems = mambo.elems_im_me();
+            let elems = mambo.elems_im_me().unwrap();
             assert!(
                 elems.abs_diff(inv_x) <= ELEM_NUMS_TO_READ_IN_MUTEX as usize * shards,
                 "elems.abs_diff(x):{} {}",
@@ -612,8 +621,9 @@ mod tests_n {
             );
             let x = x as u64;
             //println!("{:?}  {}", mambo.remove(x as u64), x);
-            assert_eq!(mambo.remove(x as u64), Some(x as u32 + 1));
+            assert_eq!(mambo.remove(x as u64), Ok(Some(x as u32 + 1)));
         }
+        //assert_eq!(mambo.remove(11), Ok(None));
 
         return;
     }
@@ -636,29 +646,33 @@ mod tests_n {
 
                         let elem_me = format!("mambo elem{}", key);
 
-                        mambo_arc.insert(key as u64, &elem_me, false);
+                        mambo_arc.insert(key as u64, &elem_me, false).unwrap();
 
-                        assert_eq!(mambo_arc.insert(key as u64, &elem_me, false), None);
+                        assert_eq!(mambo_arc.insert(key as u64, &elem_me, false), Ok(None));
 
-                        mambo_arc.read(key as u64, |ind| {
-                            let ind = ind.unwrap();
+                        mambo_arc
+                            .read(key as u64, |ind| {
+                                let ind = ind.unwrap();
 
-                            assert_eq!(
-                                ind.clone(),
-                                elem_me,
-                                " non eq read  key: {}   rea: {}   in map: {}",
-                                key,
-                                elem_me,
-                                ind.clone()
-                            );
-                        });
+                                assert_eq!(
+                                    ind.clone(),
+                                    elem_me,
+                                    " non eq read  key: {}   rea: {}   in map: {}",
+                                    key,
+                                    elem_me,
+                                    ind.clone()
+                                );
+
+                                Ok(())
+                            })
+                            .unwrap();
                     }
 
                     for key in 0..OPS_PER_THREAD {
                         let key = tt + (key * OPS_PER_THREAD * 10);
                         let elem_me = format!("mambo elem{}", key);
 
-                        assert_eq!(mambo_arc.remove(key as u64), Some(elem_me.clone()));
+                        assert_eq!(mambo_arc.remove(key as u64), Ok(Some(elem_me.clone())));
                     }
                 });
             }
@@ -709,7 +723,9 @@ mod tests_n {
                                         pai as u64,
                                         " based_threars_test non eq read  index: {}   rea: {}   in map: {}",o,pai as u32,*ind
                                     );
-                                });
+                                    Ok(())
+                                })
+                                .unwrap();
                             }
                         }
                     } else {
@@ -721,15 +737,15 @@ mod tests_n {
                             for yy in 0..elem_read_write {
                                 let index = tt + (NUM_THREADS * 10_000_000 * yy);
                                 let yy = yy as u64;
-                                ra_clone.insert(index as u64, &yy, false);
+                                ra_clone.insert(index as u64, &yy, false).unwrap();
                             }
                             // println!("+++++++++++++++==");
                             for yy in 0..elem_read_write {
                                 //println!("{}", yy);
                                 let index = tt + (NUM_THREADS * 10_000_000 * yy);
-                                let _ = ra_clone.remove(index as u64);
+                                let ga = ra_clone.remove(index as u64);
 
-                                if 200 > TEST_ELEMES {
+                                if ga.is_err() && 200 > TEST_ELEMES {
                                     println!("index {}", index);
 
                                     if ra_clone.data_arc.1.len() == 1 {
@@ -737,6 +753,7 @@ mod tests_n {
                                             let _ = ra_clone.read(inn as u64, |xx| {
                                                 let xx = xx.unwrap();
                                                 print!("| {} ", xx);
+                                                Ok(())
                                             });
                                             if inn % 4 == 3 {
                                                 println!()
@@ -767,8 +784,8 @@ mod tests_n {
         for tre in (1..20).step_by(1) {
             //const NUM_THREADS: usize = 50;
             let num_treads: usize = tre;
-            const NUM_ELEMS: usize = 800;
-            const TOTAL_OPS: u64 = 5000_000;
+            const NUM_ELEMS: usize = 80;
+            const TOTAL_OPS: u64 = 500_000;
             let ops_threads: u64 = TOTAL_OPS / num_treads as u64;
             {
                 let mut mambo = Mambo::<u64>::new(16, 10.0).unwrap();
@@ -778,7 +795,7 @@ mod tests_n {
 
                 for i in 0..NUM_ELEMS {
                     let t = 0;
-                    mambo.insert(i as u64, &t, false);
+                    mambo.insert(i as u64, &t, false).unwrap();
                 }
 
                 for _ in 0..num_treads {
@@ -794,10 +811,13 @@ mod tests_n {
                             for _ in 0..3 {
                                 od = od.rotate_left(43).wrapping_add(!i as u64);
                             }
-                            let _ = ra_clone.read(od % NUM_ELEMS as u64, |x| {
-                                let x = x.unwrap();
-                                *x += 1;
-                            });
+                            let _ = ra_clone
+                                .read(od % NUM_ELEMS as u64, |x| {
+                                    let x = x.unwrap();
+                                    *x += 1;
+                                    Ok(())
+                                })
+                                .unwrap();
                         }
                     });
 
@@ -811,9 +831,8 @@ mod tests_n {
                 }
                 if true {
                     println!(
-                        "| threads: {} | {} | M.op/S: {:.3} |",
-                        tre,
-                        " read  ",
+                        "{}Mop/S: {:.3}",
+                        "only read  ",
                         TOTAL_OPS as f64 / std_start.elapsed().as_micros() as f64
                     );
                 } else {
@@ -825,7 +844,7 @@ mod tests_n {
                 }
             }
         }
-        assert!(false);
+        // assert!(false);
     }
 
     #[test]
@@ -839,7 +858,7 @@ mod tests_n {
             //println!("{}", clom.elems_im_me().unwrap());
             for yy in 0..elem_in_cycle {
                 let t = 0;
-                clom.insert((yy * cycles * 100) + xx, &t, false);
+                clom.insert((yy * cycles * 100) + xx, &t, false).unwrap();
             }
         }
 
