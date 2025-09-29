@@ -126,8 +126,7 @@ it may return 0 even if there are elements in Mambo.
 This is a forced decision to increase productivity.
 
 ## performance test in the --release version on the i7-11700f processor
-|  threads    | type    |millions op/ sec|
-|:-----------:|:-------:|:------------- :|
+|  threads    |  type   |millions op/ sec|
 | threads: 1  |  read   | M.op/S: 42.353 |
 | threads: 2  |  read   | M.op/S: 23.663 |
 | threads: 3  |  read   | M.op/S: 24.516 |
