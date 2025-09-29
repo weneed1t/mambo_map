@@ -99,13 +99,13 @@ impl PartialEq for WhatIdo {
     }
 }
 ///hashtable
-pub struct Mambo<T: Copy> {
+pub struct Mambo<T: Clone> {
     data_arc: Arc<(f32, Box<[Shard<T>]>)>,
     how_edit_elem_without_update: Box<[i64]>,
     usize_smaller_u64: bool,
 }
 
-impl<T: Copy> Mambo<T> {
+impl<T: Clone> Mambo<T> {
     ///  The num_shards table is divided into independent sections for optimization,
     ///  the optimal value is num_shards = the number of cores on your processor for multithreaded operation.
     ///  The redream_factor can be from 1.0 to 10.0, depending on how Mambo
@@ -221,7 +221,7 @@ impl<T: Copy> Mambo<T> {
                     let mut new_mutex_elem =
                         v1_new[old_elem.1 as usize % v1_new.len()].lock().unwrap();
 
-                    new_mutex_elem.1.push(*old_elem);
+                    new_mutex_elem.1.push(old_elem.clone());
                     //elems_in_shard += 1;
                 }
                 //minimizing memory consumption, removing unused vectors
@@ -433,10 +433,10 @@ impl<T: Copy> Mambo<T> {
         self.search_vec(key, |vecta| {
             for x in 0..vecta.len() {
                 if vecta[x].1 == key as u64 {
-                    let last = *vecta.last().ok_or("ver item is empty")?;
+                    let last = vecta.last().ok_or("ver item is empty")?;
 
                     ret_after_remove = Some(vecta[x].0.clone());
-                    vecta[x] = last;
+                    vecta[x] = last.clone();
                     vecta.pop();
                     return Ok(WhatIdo::REMOVE);
                 }
@@ -496,7 +496,7 @@ impl<T: Copy> Mambo<T> {
     }
 }
 
-impl<T: Copy> Drop for Mambo<T> {
+impl<T: Clone> Drop for Mambo<T> {
     ///  deleting a Mambo instance. Since Mambo uses only secure rust APIs,
     ///  it does not need to implement the Drop trace, but since when inserting
     ///  or deleting an element, calls insert() or remove() do not change the global

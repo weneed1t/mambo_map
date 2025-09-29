@@ -2,3 +2,7 @@ A very simple and cross-platform implementation of the cache table framework tha
 mem,
     sync::{Arc, Mutex, RwLock, TryLockError},
 } set of the standard rust library
+
+```rust
+
+```
