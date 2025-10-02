@@ -1,9 +1,7 @@
 use std::{
     mem,
     sync::{Arc, Mutex, RwLock, TryLockError},
-    usize,
 };
-//================================================================++
 pub const PRIME_NUMBERS_TO_TAB: [u64; 64] = [
     0x2,                    //default
     0x5,                    //0
@@ -70,16 +68,12 @@ pub const PRIME_NUMBERS_TO_TAB: [u64; 64] = [
     0x7fffffffffffffe7_u64, // 61
     0xffffffffffffffc5_u64, // 62
 ];
-//================================================================--
-const ELEM_NUMS_TO_READ_IN_MUTEX: u64 = 32;
-const DEFAULT_NEW_SHARD_SIZE: usize = 2;
-const SHRINK_THRESHOLD_FACTOR: f32 = 1.25;
+
 const EPSILON: f32 = 0.0001;
+const SHRINK_THRESHOLD_FACTOR: f32 = 1.25;
 const WASMOVED: bool = false;
 const ONPLACE: bool = true;
-const PANIC_IN_PANIC: bool = true;
-//================================================================++
-
+const ELEM_NUMS_TO_READ_IN_MUTEX: u64 = 32;
 type ElemBox<T> = (T, u64);
 type Vecta<T> = Mutex<(bool, Vec<ElemBox<T>>)>;
 type InRw<T> = (Mutex<usize>, /*elems in srard*/ [Box<[Vecta<T>]>; 2]);
@@ -87,7 +81,7 @@ type Shard<T> = (
     Mutex<u32>, //locler os for resize
     RwLock<InRw<T>>,
 );
-//================================================================--
+
 enum WhatIdo {
     READ,
     REMOVE,
@@ -124,140 +118,32 @@ impl<T: Clone> Mambo<T> {
             return Err("(1.0..11.0).contains( redream_factor)");
         }
         let shards = (0..num_shards)
-            .map(|_| (Mutex::new(0_u32), RwLock::new(Self::new_into_shard_data())))
+            .map(|_| {
+                let data: Box<[Vecta<T>]> = (0..PRIME_NUMBERS_TO_TAB[0])
+                    .map(|_| Mutex::new((ONPLACE, vec![])))
+                    .collect();
+
+                (
+                    Mutex::new(0_u32),
+                    RwLock::new((Mutex::new(0_usize), [data, vec![].into_boxed_slice()])),
+                )
+            })
             .collect();
         Ok(Self {
             data_arc: Arc::new((redream_factor, shards)),
             how_edit_elem_without_update: vec![0; num_shards].into_boxed_slice(),
         })
     }
-    /// secure access to the table element, if the mutex element is poisoned,
-    /// a new empty mutex is created.
-    fn safe_mutex_elem<'m>(
-        mutexer: &'m Vecta<T>,
-        i_non_save_edits: &mut i64,
-    ) -> std::sync::MutexGuard<'m, (bool, Vec<ElemBox<T>>)> {
-        match mutexer.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => {
-                if PANIC_IN_PANIC {
-                    panic!("safe_mutex_elem is poisoned");
-                }
-                let mut guard = poisoned.into_inner();
-
-                *i_non_save_edits = i_non_save_edits
-                    .checked_sub(guard.1.len() as i64)
-                    .unwrap_or(0);
-
-                *guard = (ONPLACE, vec![]);
-                mutexer.clear_poison();
-                guard
-            }
-        }
-    }
-    ///uses the access method .write()
-    ///secure access to the rwlock , if the rwlock is poisoned,
-    ///a new empty rwlock is created with a standard long
-    fn save_rwlock_write<'m>(
-        rwlock: &'m RwLock<InRw<T>>,
-        forsed_repoisoned: bool,
-    ) -> std::sync::RwLockWriteGuard<'m, InRw<T>> {
-        match rwlock.write() {
-            Ok(mut guard) => {
-                if forsed_repoisoned {
-                    *guard = Self::new_into_shard_data();
-                }
-                guard
-            }
-            Err(poisoned) => {
-                if PANIC_IN_PANIC {
-                    panic!("save_rwlock_write is poisoned");
-                }
-                let mut guard = poisoned.into_inner();
-
-                *guard = Self::new_into_shard_data();
-                rwlock.clear_poison();
-                guard
-            }
-        }
-    }
-    ///uses the .rear() access method,
-    ///BUT IF the rwlock IS CORRUPTED, IT IS OVERWRITTEN USING THE .write() METHOD.
-    ///secure access to the rwlock, if the rwlock is poisoned,
-    ///a new empty rwlock is created with the standard long
-    fn save_rwlock_read<'m>(
-        rwlock: &'m RwLock<InRw<T>>,
-        forsed_repoisoned: bool,
-    ) -> std::sync::RwLockReadGuard<'m, InRw<T>> {
-        for _ in 0..10 {
-            if let Ok(guard) = rwlock.read() {
-                return guard;
-            }
-            let _t = Self::save_rwlock_write(&rwlock, forsed_repoisoned);
-        }
-        panic!(
-            "It was not possible to clean up the Rwlock poisoning in 10 iterations,
-         which most likely means that this is an irreparable error or very deep damage.
-         or the RwLock manages to get corrupted between for calls."
-        );
-    }
-    //creates initial empty data for the Rwlock
-    fn new_into_shard_data() -> InRw<T> {
-        let data: Box<[Vecta<T>]> = (0..DEFAULT_NEW_SHARD_SIZE)
-            .map(|_| Mutex::new((ONPLACE, vec![])))
-            .collect();
-        (Mutex::new(0_usize), [data, vec![].into_boxed_slice()])
-    }
-
-    ///uses the .rear() access method,
-    ///BUT IF the rwlock IS CORRUPTED, IT IS OVERWRITTEN USING THE .write() METHOD.
-    ///checking that the vector number 0 has a length, which means that it is initialized,
-    ///it must be of non-zero length. the vector number 1 has a length of 0. If it has a length of 0,
-    ///it means that an error has occurred in the program or the resize_shard
-    ///function is currently activated in another thread, which is not possible. In real work,
-    ///this check should always end positively, and is needed to simplify
-    ///the detection of errors during development.
-
-    fn lock_get_rw_cap(rwl: &RwLock<InRw<T>>) -> usize {
-        let (v0_len, v1_len) = {
-            let realder = Self::save_rwlock_read(&rwl, false);
-            (realder.1[0].len(), realder.1[1].len())
-        };
-
-        if v0_len > 0 && v1_len == 0 {
-            v0_len
-        } else if v1_len > 0 && v0_len > 0 {
-            if PANIC_IN_PANIC {
-                panic!(
-                    "
-                vec0 and vec1 > 0 this is not possible because if vec0 and vec1 > 0,
-                it means that several resize_shards are currently being executed, 
-                or the previous resize_shard call ended with a fatal error"
-                );
-            } else {
-                let _t = Self::save_rwlock_write(&rwl, true);
-                DEFAULT_NEW_SHARD_SIZE
-            }
-        } else {
-            if PANIC_IN_PANIC {
-                panic!(
-                    "
-                vec0 and vec1 == 0 this is an impossible state, most likely there was an error calculating
-                the new length of the vec0 array, since vec1 should have a length of 0 since vec1 has a non-zero
-                length only during resize_shard execution, if vec1 has a non-zero length, then either another
-                resize_shard is executed in another thread or the previous resize_shard call has ended panic");
-            } else {
-                let _t = Self::save_rwlock_write(&rwl, true);
-                DEFAULT_NEW_SHARD_SIZE
-            }
-        }
-    }
 
     /// errors during shard resizing are fatal. and in most cases,
     /// it is impossible to restore data integrity
     // in the shard if an error occurred during self.resize_shard.
-    fn resize_shard(&mut self, shard_index: usize, new_len: usize) -> bool {
-        let shard = &self.data_arc.1[shard_index];
+    fn resize_shard(&self, shard_index: usize, new_len: usize) -> bool {
+        let shard = self
+            .data_arc
+            .1
+            .get(shard_index)
+            .expect("shard_index out of range");
         /*locker_resizer is needed for a global announcement that the size of the current shard is currently
         being edited. if locker_resizer is currently blocked, then other functions donot need to resize this shard.
         !NOTE!
@@ -270,23 +156,41 @@ impl<T: Clone> Mambo<T> {
                 return false;
             }
             Err(TryLockError::Poisoned(err)) => {
-                if PANIC_IN_PANIC {
-                    panic!("lock Mutex poisoned: {:?}", err);
-                } else {
-                    let mut guard = err.into_inner();
-                    shard.0.clear_poison();
-                    *guard = 0;
-
-                    let _t = Self::save_rwlock_write(&shard.1, true);
-
-                    guard
-                }
+                panic!("lock Mutex poisoned: {:?}", err);
             }
         };
         *locker_resizer = locker_resizer.wrapping_add(1);
 
-        {
-            let _: usize = Self::lock_get_rw_cap(&shard.1);
+        let _ = {
+            //non lock read
+            /*
+            checking that the vector number 0 has a length, which means that it is initialized,
+            it must be of non-zero length. the vector number 1 has a length of 0. If it has a length of 0,
+            it means that an error has occurred in the program or the resize_shard
+            function is currently activated in another thread, which is not possible. In real work,
+            this check should always end positively, and is needed to simplify
+            the detection of errors during development.*/
+            let realder = self.save_rwlock_read(&shard.1);
+            let v0_len = realder.1[0].len();
+            let v1_len = realder.1[1].len();
+
+            if v0_len > 0 && v1_len == 0 {
+                v0_len
+            } else if v1_len > 0 && v0_len > 0 {
+                panic!(
+                    "
+                vec0 and vec1 > 0 this is not possible because if vec0 and vec1 > 0,
+                it means that several resize_shards are currently being executed, 
+                or the previous resize_shard call ended with a fatal error"
+                );
+            } else {
+                panic!(
+                    "
+                vec0 and vec1 == 0 this is an impossible state, most likely there was an error calculating
+                the new length of the vec0 array, since vec1 should have a length of 0 since vec1 has a non-zero
+                length only during resize_shard execution, if vec1 has a non-zero length, then either another
+                resize_shard is executed in another thread or the previous resize_shard call has ended panic");
+            }
         };
 
         {
@@ -295,20 +199,26 @@ impl<T: Clone> Mambo<T> {
                 .map(|_| Mutex::new((ONPLACE, vec![])))
                 .collect();
             //write lock edits putting a new vector in the Rwlock
-            let mut w_rlock = Self::save_rwlock_write(&shard.1, false);
-            w_rlock.1[1] = new_vec_box;
+            let mut w_rlock = self.save_rwlock_write(&shard.1);
+            if w_rlock.1[1].len() == 0 {
+                w_rlock.1[1] = new_vec_box;
+            } else {
+                panic!("vec1 should have a length of 0 since vec1 has a non-zero
+                length only during resize_shard execution, if vec1 has a non-zero length, then either another
+                resize_shard is executed in another thread or the previous resize_shard call has ended panic");
+            }
         }
         {
             //read non lock
-            let r_lock = Self::save_rwlock_read(&shard.1, false);
+            let r_lock = self.save_rwlock_read(&shard.1);
 
             let v0_old = &r_lock.1[0];
             let v1_new = &r_lock.1[1];
             //iterating through the elements in the old vector and moving the elements to the new one
             //let mut elems_in_shard: usize = 0;
             for x in v0_old.iter() {
-                let mut temp_old_mutexer =
-                    Self::safe_mutex_elem(x, &mut self.how_edit_elem_without_update[shard_index]);
+                let mut void_bool = true;
+                let mut temp_old_mutexer = self.safe_mutex_elem(x, &r_lock.0, &mut void_bool);
                 /*if the elements were moved before they were moved, an error is triggered.
                 since the elements are moved only during copying, and if they have been moved and some other
                 function is also moving them at the moment, this should not be possible,
@@ -325,9 +235,11 @@ impl<T: Clone> Mambo<T> {
                 temp_old_mutexer.0 = WASMOVED;
 
                 for old_elem in temp_old_mutexer.1.iter() {
-                    let mut new_mutex_elem = Self::safe_mutex_elem(
+                    let mut was_new_elem = false;
+                    let mut new_mutex_elem = self.safe_mutex_elem(
                         &v1_new[old_elem.1 as usize % v1_new.len()],
-                        &mut self.how_edit_elem_without_update[shard_index],
+                        &r_lock.0,
+                        &mut was_new_elem,
                     );
 
                     new_mutex_elem.1.push(old_elem.clone());
@@ -343,12 +255,98 @@ impl<T: Clone> Mambo<T> {
         }
         {
             //write lock edits
-            let mut w_lock = Self::save_rwlock_write(&shard.1, false);
+            let mut w_lock = self.save_rwlock_write(&shard.1);
 
             w_lock.1[0] = mem::replace(&mut w_lock.1[1], Vec::new().into_boxed_slice());
         }
 
         true
+    }
+
+    fn safe_mutex_elem<'m>(
+        &self,
+        mutexer: &'m Vecta<T>,
+        mutexer_usize: &Mutex<usize>,
+        was_new_elem: &mut bool,
+    ) -> std::sync::MutexGuard<'m, (bool, Vec<ElemBox<T>>)> {
+        match mutexer.lock() {
+            Ok(guard) => {
+                *was_new_elem = false;
+                guard
+            }
+            Err(poisoned) => {
+                let mut guard = poisoned.into_inner();
+
+                let mut temp = mutexer_usize
+                    .lock()
+                    .expect("error in safe_mutex mutexer_usize");
+                *temp = temp.checked_sub(guard.1.len()).unwrap_or(0);
+
+                *guard = (ONPLACE, vec![]);
+                mutexer.clear_poison();
+                *was_new_elem = true;
+                guard
+            }
+        }
+    }
+
+    fn save_mutex_cap<'m>(
+        &self,
+        mutexer_usize: &'m Mutex<usize>,
+        rwlock: &'m RwLock<[Box<[Vecta<T>]>; 2]>,
+    ) -> std::sync::MutexGuard<'m, usize> {
+        match mutexer_usize.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                let mut guard = poisoned.into_inner();
+
+                *guard = 0usize;
+                mutexer_usize.clear_poison();
+                guard
+            }
+        }
+    }
+
+    fn save_rwlock_write<'m>(
+        &self,
+        rwlock: &'m RwLock<InRw<T>>,
+    ) -> std::sync::RwLockWriteGuard<'m, InRw<T>> {
+        //match rwlock.write(){}
+
+        match rwlock.write() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                let mut guard = poisoned.into_inner();
+
+                *guard = (
+                    Mutex::new(0),
+                    [
+                        (0..PRIME_NUMBERS_TO_TAB[0])
+                            .map(|_| Mutex::new((ONPLACE, vec![])))
+                            .collect(),
+                        vec![].into_boxed_slice(),
+                    ],
+                );
+                rwlock.clear_poison();
+                guard
+            }
+        }
+    }
+
+    fn save_rwlock_read<'m>(
+        &self,
+        rwlock: &'m RwLock<InRw<T>>,
+    ) -> std::sync::RwLockReadGuard<'m, InRw<T>> {
+        for _ in 0..10 {
+            if let Ok(guard) = rwlock.read() {
+                return guard;
+            }
+            let _ = self.save_rwlock_write(&rwlock);
+        }
+        panic!(
+            "It was not possible to clean up the Rwlock poisoning in 10 iterations,
+         which most likely means that this is an irreparable error or very deep damage."
+        );
     }
 
     fn search_vec<F>(&mut self, key: u64, operation: F)
@@ -360,13 +358,20 @@ impl<T: Clone> Mambo<T> {
         let shard = &self.data_arc.1[shard_index as usize];
         let mut is_edit = false;
         {
-            let r_lock = Self::save_rwlock_read(&shard.1, false);
+            let r_lock = shard.2.read().expect(
+                format!( "error in search_vec Rwlock{} this means that the RwLock has been corrupted,
+                    according to the rust standard, the RwLock can only get damaged during the write() call,
+                    the write() call is only in fn resize_shard,
+                    which is needed to change the length of the shard size. 
+                    poisoning of data in RwLock is highly likely to occur in preparation for resizing.",shard_index).as_str());
             for x in 0..2 {
-                let vecta = &r_lock.1[x & 0b1];
+                let vecta = &r_lock[x & 0b1];
+                let mut void_bool = false;
                 if 0 != vecta.len() {
-                    let mut mutexer = Self::safe_mutex_elem(
+                    let mut mutexer = self.safe_mutex_elem(
                         &vecta[key as usize % vecta.len()],
-                        &mut self.how_edit_elem_without_update[shard_index as usize],
+                        &shard.1,
+                        &mut void_bool,
                     );
 
                     if ONPLACE == mutexer.0 {
@@ -444,8 +449,11 @@ impl<T: Clone> Mambo<T> {
         }
 
         let elems_in_me = {
-            let rwler = Self::save_rwlock_read(&self.data_arc.1[shard_index].1, false);
-            let mut mutexer = rwler.0.lock().expect("");
+            let mut mutexer = self.data_arc.1[shard_index].1.lock().expect(
+                format!(
+                    "poisoning the Mutex<usize> that stores the number of items in new_size_shard in the shard : {}",shard_index
+                ).as_str());
+
             if *shard_i > 0 {
                 *mutexer = mutexer
                     .checked_add(shard_i.abs_diff(0) as usize)
@@ -590,13 +598,12 @@ impl<T: Clone> Mambo<T> {
     pub fn elems_im_me(&self) -> usize {
         let mut elems = 0_usize;
         for (shard_index, x) in self.data_arc.1.iter().enumerate() {
-            let x = Self::save_rwlock_read(&x.1, false);
-            let t =x.0.lock().expect(format!(
+            let t = x.1.lock().expect(format!(
                 "poisoning the Mutex<usize> that stores the number of items in new_size_shard in the shard : {}",shard_index
             ).as_str());
             elems = elems
                 .checked_add(*t)
-                .expect(format!("err elems.checked_add(elems in shard {} )", shard_index).as_str());
+                .expect("err elems.checked_add(elems in shard )");
         }
         elems
     }
@@ -612,16 +619,35 @@ impl<T: Clone> Drop for Mambo<T> {
     fn drop(&mut self) {
         let mut ive = vec![0usize; 0];
 
-        for shard in self.data_arc.1.iter() {
+        for (shard, shard_i) in self
+            .data_arc
+            .1
+            .iter()
+            .zip(self.how_edit_elem_without_update.iter())
+        {
             let shard_capasity = {
-                let rwr = Self::save_rwlock_read(&shard.1, false);
-                let len_r1 = rwr.1[1].len();
+                let rwr = shard.2.read().unwrap();
+                let len_r1 = rwr[1].len();
                 if 0 != len_r1 {
                     len_r1
                 } else {
-                    rwr.1[0].len()
+                    rwr[0].len()
                 }
             };
+
+            let mut mutexer = shard.1.lock().unwrap();
+
+            if *shard_i > 0 {
+                *mutexer = mutexer
+                    .checked_add(shard_i.abs_diff(0) as usize)
+                    .expect("Drop add is owerflow");
+                //println!("mux {}", shard_i.abs_diff(0));
+            } else {
+                *mutexer = mutexer
+                    .checked_sub(shard_i.abs_diff(0) as usize)
+                    .unwrap_or(0);
+            }
+            //println!("len: {}", shard_capasity);
             ive.push(shard_capasity);
         }
 
@@ -1020,18 +1046,18 @@ mod tests_n {
             }
 
             let mut mut_all_real_elems = 0usize;
-            let ra_x = mambo.data_arc.1[0].1.read().unwrap();
+            let ra_x = mambo.data_arc.1[0].2.read().unwrap();
 
-            for e in ra_x.1[0].iter() {
+            for e in ra_x[0].iter() {
                 mut_all_real_elems += e.lock().unwrap().1.len();
             }
 
-            let yyyy = mambo.data_arc.1[0].1.read().unwrap();
-            let xxxx = yyyy.0.lock().unwrap();
+            let xxxx = mambo.data_arc.1[0].1.lock().unwrap();
+            let yyyy = mambo.data_arc.1[0].2.read().unwrap();
             println!(
                 "in mut  {} in rw {}   in REAL: {}",
                 xxxx,
-                yyyy.1[0].len(),
+                yyyy[0].len(),
                 mut_all_real_elems
             );
             println!("GLLLLLL \n dif: {}", (mut_all_real_elems.abs_diff(*xxxx)));
