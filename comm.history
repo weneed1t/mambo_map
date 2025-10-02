@@ -1,0 +1,118 @@
+  283  git commit -m "Rename readme 1to README.md"
+  284  git commit -m "Rename readme 1to README.md"
+  285  git push -u origin main
+  286  cargo publish --allow-dirty
+  287  cargo publish --allow-dirty
+  288  cargo publish --allow-dirty
+  289  git push -u origin main
+  290  git commit 
+  291  git commit -a
+  292  git commit -a
+  293  git commit -m "Merge remote main with local changes"
+  294  git add 
+  295  git add Cargo.toml 
+  296  git add README 
+  297  git commit -a
+  298  git push -u origin main
+  299  git pull origin main 
+  300  git checkout main
+  301  git add .
+  302  git commit -m "cсука"
+  303  git push origin main
+  304  cargo publish --allow-dirty
+  305  git add .
+  306  git commit -m "cсука"
+  307  git push origin main
+  308  cargo publish --allow-dirty
+  309  git add .
+  310  git commit -m "cсука"
+  311  git push origin main
+  312  cargo publish --allow-dirty
+  313  git push origin main
+  314  cargo publish --allow-dirty
+  315  git add .
+  316  git commit -m "cсука"
+  317  cargo publish --allow-dirty
+  318  git push origin main
+  319  cargo publish --allow-dirty
+  320  git add .
+  321  git commit -m "cсука"
+  322  cargo publish --allow-dirty
+  323  git commit -m "cсука"
+  324  git push origin main
+  325  cargo publish --allow-dirty
+  326  cargo publish --allow-dirty
+  327  git add .
+  328  git commit -m "cсука"
+  329  git push origin main
+  330  cargo publish --allow-dirty
+  331  peboo
+  332  reboot 
+  333  rclone 
+  334  rclone info
+  335  rclone config
+  336  rclone copy /mnt/_all_rust gd_new:_all_rust
+  337  git add .
+  338  git commit -m "edit"
+  339  git commit -m "edit2"
+  340  git add .
+  341  git commit -m "edit2"
+  342  git add .
+  343  git commit -m "edit2"
+  344  git push origin main
+  345  git add .
+  346  git push origin main
+  347  git push origin main
+  348  git commit -m "edit2"
+  349  git push origin main
+  350  cargo publish --allow-dirty
+  351  git add .
+  352  git commit -m "4"
+  353  cargo publish --allow-dirty
+  354  cargo publish --allow-dirty
+  355  git add .
+  356  git commit -m "4"
+  357  git push origin main
+  358  cargo publish --allow-dirty
+  359  poweroff 
+  360  poweroff 
+  361  git add .
+  362  git commit -m "6"
+  363  git add .
+  364  git commit -m "6_1"
+  365  git push origin main
+  366  cargo publish --allow-dirty
+  367  git add .
+  368  git add .
+  369  git commit -m "7_0"
+  370  git push origin main
+  371  cargo publish --allow-dirty
+  372  git add .
+  373  git commit -m "8_0"
+  374  git push origin main
+  375  cargo publish --allow-dirty
+  376  cargo test --release 
+  377  cargo test --release 
+  378  cargo test --release 
+  379  cargo test --release 
+  380  cargo test --release 
+  381  cargo test --release 
+  382  git add .
+  383  git commit -m "9_0"
+  384  git push origin main
+  385  git push origin main
+  386  git push origin main
+  387  cargo publish --allow-dirty
+  388  git add .
+  389  git commit -m "9_0"
+  390  git push origin main
+  391  cargo publish --allow-dirty
+  392  git add .
+  393  git commit -m "9_2"
+  394  git push origin main
+  395  cargo publish --allow-dirty
+  396  git add .
+  397  git commit -m "9_2"
+  398  git push origin main
+  399  cargo publish --allow-dirty
+  400  ssh h2ke 
