@@ -2,6 +2,6 @@
 **/*.rs.bk
 *.log
 .env
-.history
-.history
+
+*.history
 /.vscode
