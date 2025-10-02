@@ -1,0 +1,2 @@
+Box<[(Mutex<u32>, Mutex<bool>, RwLock<[Box<[Mutex<(bool, Vec<(T, u64)>)>]>; 2]>)]>
+(Mutex<u32>, Mutex<usize>, RwLock<[Box<[Mutex<(bool, Vec<(T, u64)>)>]>; 2]>)

@@ -1,0 +1,2 @@
+Box<[(std::sync::Mutex<u32>, std::sync::Mutex<bool>, RwLock<[Box<[std::sync::Mutex<(bool, Vec<(T, u64)>)>]>; 2]>)]>
+(std::sync::Mutex<u32>, std::sync::Mutex<usize>, RwLock<[Box<[std::sync::Mutex<(bool, Vec<(T, u64)>)>]>; 2]>)

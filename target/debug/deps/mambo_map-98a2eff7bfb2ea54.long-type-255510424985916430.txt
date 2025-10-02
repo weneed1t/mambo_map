@@ -1,0 +1,1 @@
+std::sync::Arc<(f32, Box<[(Mutex<u32>, Mutex<{type error}>, RwLock<[Box<[Mutex<(bool, Vec<(u32, u64)>)>]>; 2]>)], {type error}>), {type error}>

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PRIME_NUMBERS_TO_TAB"],"struct":["Mambo"]};

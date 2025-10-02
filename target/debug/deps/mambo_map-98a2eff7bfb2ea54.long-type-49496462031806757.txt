@@ -1,0 +1,1 @@
+RwLockWriteGuard<'_, (std::sync::Mutex<usize>, [Box<[std::sync::Mutex<(bool, Vec<(T, u64)>)>]>; 2])>
