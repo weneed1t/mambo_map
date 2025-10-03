@@ -1,6 +1,6 @@
 [package]
 name = "mambo_map"
-version = "0.0.96"
+version = "0.0.97"
 edition = "2021"
 description = "lightweight, simple, minimally blocking multithreaded hashtable"
 license = "MIT"
@@ -22,5 +22,5 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(test)'] }
 strip = "symbols"
 
 codegen-units = 1
-lto = "fat"       #
+lto = "fat"
 opt-level = 3

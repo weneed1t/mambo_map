@@ -78,8 +78,7 @@ const FORE_THRESHOLD_FACTOR: f32 = 0.10;
 const EPSILON: f32 = 0.0001;
 const WASMOVED: bool = false;
 const ONPLACE: bool = true;
-const PANIC_IN_PANIC: bool = true;
-const PANIC_IN_MU_RW_PANIC: bool = false;
+const PANIC_POISONED_IN_MUTEX_AND_RWLOCK: bool = false;
 //================================================================++
 
 type ElemBox<T> = (T, u64);
@@ -142,7 +141,7 @@ impl<T: Clone> Mambo<T> {
         match mutexer.lock() {
             Ok(guard) => guard,
             Err(poisoned) => {
-                if PANIC_IN_MU_RW_PANIC {
+                if PANIC_POISONED_IN_MUTEX_AND_RWLOCK {
                     panic!("safe_mutex_elem is poisoned");
                 }
                 let mut guard = poisoned.into_inner();
@@ -172,7 +171,7 @@ impl<T: Clone> Mambo<T> {
                 guard
             }
             Err(poisoned) => {
-                if PANIC_IN_MU_RW_PANIC {
+                if PANIC_POISONED_IN_MUTEX_AND_RWLOCK {
                     panic!("save_rwlock_write is poisoned");
                 }
                 let mut guard = poisoned.into_inner();
@@ -229,29 +228,19 @@ impl<T: Clone> Mambo<T> {
         if v0_len > 0 && v1_len == 0 {
             v0_len
         } else if v1_len > 0 && v0_len > 0 {
-            if PANIC_IN_PANIC {
-                panic!(
-                    "
+            panic!(
+                "
                 vec0 and vec1 > 0 this is not possible because if vec0 and vec1 > 0,
                 it means that several resize_shards are currently being executed, 
                 or the previous resize_shard call ended with a fatal error"
-                );
-            } else {
-                let _t = Self::save_rwlock_write(&rwl, true);
-                DEFAULT_NEW_SHARD_SIZE
-            }
+            );
         } else {
-            if PANIC_IN_PANIC {
-                panic!(
+            panic!(
                     "
                 vec0 and vec1 == 0 this is an impossible state, most likely there was an error calculating
                 the new length of the vec0 array, since vec1 should have a length of 0 since vec1 has a non-zero
                 length only during resize_shard execution, if vec1 has a non-zero length, then either another
                 resize_shard is executed in another thread or the previous resize_shard call has ended panic");
-            } else {
-                let _t = Self::save_rwlock_write(&rwl, true);
-                DEFAULT_NEW_SHARD_SIZE
-            }
         }
     }
 
@@ -272,7 +261,7 @@ impl<T: Clone> Mambo<T> {
                 return false;
             }
             Err(TryLockError::Poisoned(err)) => {
-                if PANIC_IN_PANIC {
+                if PANIC_POISONED_IN_MUTEX_AND_RWLOCK {
                     panic!("lock Mutex poisoned: {:?}", err);
                 } else {
                     let mut guard = err.into_inner();
@@ -669,7 +658,7 @@ impl<T: Clone> Mambo<T> {
             let mut locker_resizer = match shard.0.lock() {
                 Ok(guard) => guard,
                 Err(err) => {
-                    if PANIC_IN_PANIC {
+                    if PANIC_POISONED_IN_MUTEX_AND_RWLOCK {
                         panic!("lock Mutex poisoned: {:?}", err);
                     } else {
                         let mut guard = err.into_inner();
