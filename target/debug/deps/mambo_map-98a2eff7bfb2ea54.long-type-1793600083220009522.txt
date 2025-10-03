@@ -1,1 +1,0 @@
-&Result<MutexGuard<'_, (bool, Vec<(T, u64)>)>, PoisonError<MutexGuard<'_, (bool, Vec<(T, u64)>)>>>

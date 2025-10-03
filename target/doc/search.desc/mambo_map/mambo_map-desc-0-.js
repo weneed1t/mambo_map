@@ -1,1 +1,0 @@
-searchState.loadedDescShard("mambo_map", 0, "Returns the argument unchanged.\nCalls <code>U::from(self)</code>.")
