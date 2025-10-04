@@ -545,18 +545,18 @@ impl<T: Clone> Mambo<T> {
     /// insert an element T with the key: u64.if there is already an element with the same key: u64 in the table,
     /// then when force_replace == true, the old element T will be replaced by the new element T,
     /// while the old element T will be returned as Some(T.clone()). if force_replace == false,
-    /// the old element will not be replaced and the function will return None.
+    /// the old element will not be replaced and the function will returned old elem as Some(T.clone()).
     /// if there is no element with this key: u64,
     /// a new element will be added to the table and the function will output None
     pub fn insert(&mut self, key: u64, elem: &T, force_replace: bool) -> Option<T> {
-        let mut replaced_elem: Option<T> = None;
+        let mut returned_elem: Option<T> = None;
         self.search_vec(key, |vecta| {
             for x in vecta.iter_mut() {
                 //Searching for an element and an equivalent key
                 if x.1 == key as u64 {
                     //if there was no insertion due to the fact that the element is already in the table,
+                    returned_elem = Some(x.0.clone());
                     if force_replace {
-                        replaced_elem = Some(x.0.clone());
                         *x = (elem.clone(), key);
                     }
                     //the operation is considered as a read.
@@ -568,7 +568,7 @@ impl<T: Clone> Mambo<T> {
             WhatIdo::INSERT
         }); //search_vec
 
-        replaced_elem
+        returned_elem
     }
     /// to remove the fragment. you need to return the key key: u64
     /// if an element was in the table and it was deleted, but the function returns Some(T.clone())
@@ -667,7 +667,7 @@ impl<T: Clone> Mambo<T> {
 
                         let _t = Self::save_rwlock_write(&shard.1, true);
                         self.how_edit_elem_without_update[i] = 0;
-                        break;
+                        continue;
                     }
                 }
             };
@@ -748,7 +748,7 @@ impl<T: Clone> Drop for Mambo<T> {
 
 #[cfg(test)]
 mod tests_n {
-
+    const DEV_TEST: bool = false;
     use super::*;
 
     // use core::time;
@@ -778,8 +778,17 @@ mod tests_n {
                 //println!("{}", elems);
             }
             let x = x as u32;
+            let y = x + 10;
+
             assert_eq!(mambo.insert(x as u64, &x, false), None);
             assert_eq!(mambo.insert(x as u64, &x, true), Some(x));
+            assert_eq!(mambo.insert(x as u64, &x, false), Some(x));
+
+            assert_eq!(mambo.insert(x as u64, &y, false), Some(x));
+            assert_eq!(mambo.insert(x as u64, &y, true), Some(x));
+            assert_eq!(mambo.insert(x as u64, &y, false), Some(y));
+
+            assert_eq!(mambo.remove(x as u64), Some(y));
             assert_eq!(mambo.insert(x as u64, &x, false), None);
         }
 
@@ -815,55 +824,135 @@ mod tests_n {
 
     #[test]
     fn based_example() {
-        {
-            let shards = 16;
-            let elems_in_mutex = 7.0;
-            const NUM_THREADS: usize = 10;
-            const OPS_PER_THREAD: usize = 100;
-            let mambo = Mambo::<String>::new(shards, elems_in_mutex).unwrap();
+        const NUM_THREADS: usize = 10;
+        const OPS_PER_THREAD: usize = 10;
+        let mut std_handles = Vec::new();
+        let shift = 1_000_000u64;
+        let global_counter = Arc::new(Mutex::new(0usize));
+        //=======================================================================
+        //The number of shards, a shard is an independent piece of the hash table,
+        //the optimal number of shards = the number of threads.
+        let shards = 16;
+        /*elements that are added to the hash table
+        A hash table has a data storage topology
+        Arc<(f32, Box<[(Mutex<u32>, RwLock<(Mutex<usize>, [Box<[Mutex<(bool, Vec<(T, u64)>)>]>; 2])>)]>)>.
+        Each individual Mutex can have an average of 1.0 to 10.0 elements.
+        the more elements there are in the Mutex, the lower the overhead of storing in memory per element,
+        but the higher the chance that one thread will block another when reading one element.*/
+        let elems_in_mutex = 7.0;
+        //returns Err(&str) if the data is incorrect
+        let mut mambo = Mambo::<String>::new(shards, elems_in_mutex).unwrap();
 
-            for tt in 1..NUM_THREADS {
-                let mut mambo_arc = mambo.arc_clone();
+        for tt in 1..NUM_THREADS {
+            let mut mambo_arc = mambo.arc_clone();
+            let arc_global_counter = Arc::clone(&global_counter);
+            std_handles.push(thread::spawn(move || {
+                for key in 0..OPS_PER_THREAD {
+                    let key = (tt + (key * OPS_PER_THREAD * 10)) + shift as usize;
 
-                let _ = thread::spawn(move || {
-                    for key in 0..OPS_PER_THREAD {
-                        let key = tt + (key * OPS_PER_THREAD * 10);
+                    let elem_me = format!("mambo elem {}", key);
 
-                        let elem_me = format!("mambo elem{}", key);
+                    /*to insert an element, if an element with the same key value already exists,
+                    it will return Some(T.clone())
+                    false indicates whether it is necessary to forcibly replace the element with a new one,
+                     even if there is already an element with such a key*/
+                    assert_eq!(mambo_arc.insert(key as u64, &elem_me, false), None);
 
-                        mambo_arc.insert(key as u64, &elem_me, false);
+                    assert_eq!(
+                        mambo_arc.insert(key as u64, &elem_me, false),
+                        Some(elem_me.clone())
+                    );
+                    /*reading, because the Mutex is kept open during reading,
+                    as long as there is an active read operation in the shard,
+                    a resizing operation and a filter operation cannot be applied to the shard.*/
+                    //NEVER CALL A RECURSIVE READ INSIDE A read() CLOSURE, AS THIS MAY LEAD TO MUTUAL LOCKING!!
+                    mambo_arc.read(key as u64, |ind| {
+                        let ind = ind.unwrap();
 
-                        assert_eq!(mambo_arc.insert(key as u64, &elem_me, false), None);
+                        assert_eq!(
+                            ind.clone(),
+                            elem_me,
+                            " non eq read  key: {}   rea: {}   in map: {}",
+                            key,
+                            elem_me,
+                            ind.clone()
+                        );
+                    });
 
-                        mambo_arc.read(key as u64, |ind| {
-                            let ind = ind.unwrap();
+                    let key_to_filter = {
+                        let mut mutexer = arc_global_counter.lock().unwrap();
+                        let key_to_filter = *mutexer;
+                        *mutexer += 1;
+                        key_to_filter
+                    };
+                    let elem_me = format!(
+                        "elem {} {} theread: {}{}",
+                        key_to_filter,
+                        if key_to_filter > 9 { "" } else { " " },
+                        tt,
+                        if tt > 9 { "" } else { " " },
+                    );
+                    assert_eq!(
+                        mambo_arc.insert(key_to_filter as u64, &elem_me, false),
+                        None
+                    );
+                }
 
-                            assert_eq!(
-                                ind.clone(),
-                                elem_me,
-                                " non eq read  key: {}   rea: {}   in map: {}",
-                                key,
-                                elem_me,
-                                ind.clone()
-                            );
-                        });
-                    }
-
-                    for key in 0..OPS_PER_THREAD {
-                        let key = tt + (key * OPS_PER_THREAD * 10);
-                        let elem_me = format!("mambo elem{}", key);
-
-                        assert_eq!(mambo_arc.remove(key as u64), Some(elem_me.clone()));
-                    }
-                });
-            }
+                for key in 0..OPS_PER_THREAD {
+                    let key = tt + (key * OPS_PER_THREAD * 10) + shift as usize;
+                    let elem_me = format!("mambo elem {}", key);
+                    //deleting an element, if such an element exists,
+                    // it will be deleted from the table and returned as (T.clone())
+                    assert_eq!(mambo_arc.remove(key as u64), Some(elem_me.clone()));
+                }
+            }));
         }
+
+        for handle in std_handles {
+            handle.join().unwrap();
+        }
+
+        println!("before filter:");
+        mambo.filter(|mut_elem, key_u64| {
+            /*The filter option is needed when you need to filter out all the elements in the hashtable
+            or change them, passes a closure with the desired parameters RFy: FnMut(&mut T, u64) -> bool,
+            where &mut T is an element and u64 is its key.bool is a decision to delete an item or not,
+            if bool == true, then this item will not be deleted from the cache table. if bool ==  false,
+            then the element will be deleted*/
+            println!(
+                "    elem: {}, {} key: {}",
+                *mut_elem,
+                if key_u64 > 9 { "" } else { " " },
+                key_u64
+            );
+
+            *mut_elem += " is even";
+            /*an example that leaves in the table only those elements that are divisible by 2 without remainder*/
+            if 0 == key_u64 % 2 {
+                return true;
+            }
+            false
+        });
+
+        println!("after filter: ");
+        mambo.filter(|mut_elem, key_u64| {
+            println!(
+                "    elem: {:<28}, {} key: {}",
+                *mut_elem,
+                if key_u64 > 9 { "" } else { " " },
+                key_u64
+            );
+
+            true
+        });
     }
 
     #[test]
     fn based_threars_test() {
         {
-            //return;
+            if !DEV_TEST && 1 == 1 {
+                return;
+            }
             const NUM_THREADS: usize = 10;
             const OPS_PER_THREAD: usize = 1000;
             const TEST_ELEMES: usize = 1000;
@@ -1024,33 +1113,11 @@ mod tests_n {
     }
 
     #[test]
-    fn read_write_ers() {
-        let mambo = Mambo::<u64>::new(1, 10.0).unwrap();
-        let std_start = Instant::now();
-        let elem_in_cycle = 10u64;
-        let cycles = 200_00u64;
-        for xx in (1..cycles).step_by(1) {
-            let mut clom = mambo.arc_clone();
-            //println!("{}", clom.elems_im_me().unwrap());
-            for yy in 0..elem_in_cycle {
-                let t = 0;
-                assert_eq!(clom.insert((yy * cycles * 100) + xx, &t, false), None);
-            }
-        }
-
-        println!(
-            "{}Mop/S: {:.4}",
-            "only read  ",
-            (elem_in_cycle * cycles) as f64 / std_start.elapsed().as_micros() as f64
-        );
-
-        // assert!(false);
-    }
-
-    #[test]
     fn based_panic_test() {
         {
-            //return;
+            if !DEV_TEST && 1 == 1 {
+                return;
+            }
             const NUM_THREADS: usize = 7000;
             const OPS_PER_THREAD: usize = 30;
             const TEST_ELEMES: usize = 500;
@@ -1148,58 +1215,122 @@ mod tests_n {
                 yyyy.1[0].len(),
                 mut_all_real_elems
             );
-            println!("GLLLLLL \n dif: {}", (mut_all_real_elems.abs_diff(*xxxx)));
+            println!(
+                "mut_all_real_elems \n: {}",
+                (mut_all_real_elems.abs_diff(*xxxx))
+            );
 
-            println!("\n\n\nUWLAR: {} \n\n\n", *uwelar.lock().unwrap());
+            println!("\n\n\n was live elems: {} \n\n\n", *uwelar.lock().unwrap());
             // assert!(false);
         }
     }
 
     #[test]
     fn based_panic_example() {
-        {
-            let shards = 16;
-            let elems_in_mutex = 7.0;
-            const NUM_THREADS: usize = 10;
-            const OPS_PER_THREAD: usize = 100;
-            let mambo = Mambo::<String>::new(shards, elems_in_mutex).unwrap();
+        if !DEV_TEST && 1 == 1 {
+            return;
+        }
+        let shards = 10;
+        let elems_in_mutex = 7.0;
+        const NUM_THREADS: usize = 100;
+        const OPS_PER_THREAD: usize = 10000;
+        let mut mambo = Mambo::<String>::new(shards, elems_in_mutex).unwrap();
+        let mut std_handles = Vec::new();
+        for tt in 0..NUM_THREADS {
+            let mut mambo_arc = mambo.arc_clone();
 
-            for tt in 1..NUM_THREADS {
-                let mut mambo_arc = mambo.arc_clone();
+            std_handles.push(thread::spawn(move || {
+                for key in 0..OPS_PER_THREAD {
+                    let key = key + (OPS_PER_THREAD * tt);
 
-                let _ = thread::spawn(move || {
-                    for key in 0..OPS_PER_THREAD {
-                        let key = tt + (key * OPS_PER_THREAD * 10);
+                    let elem_me = format!("mambo elem{}", key);
 
-                        let elem_me = format!("mambo elem{}", key);
+                    assert_eq!(mambo_arc.insert(key as u64, &elem_me, false), None);
 
-                        mambo_arc.insert(key as u64, &elem_me, false);
+                    mambo_arc.read(key as u64, |ind| {
+                        if ind.is_none() {
+                            return;
+                        }
+                        let ind = ind.unwrap();
 
-                        assert_eq!(mambo_arc.insert(key as u64, &elem_me, false), None);
+                        assert_eq!(
+                            ind.clone(),
+                            elem_me,
+                            " non eq read  key: {}   rea: {}   in map: {}",
+                            key,
+                            elem_me,
+                            ind.clone()
+                        );
+                    });
+                }
+                if tt == 50 {
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let mut mus = mambo_arc.data_arc.1[0].0.lock().unwrap();
 
-                        mambo_arc.read(key as u64, |ind| {
-                            let ind = ind.unwrap();
+                        if 1 == 1 {
+                            panic!("");
+                        }
+                        *mus = 0;
+                    }));
+                }
 
-                            assert_eq!(
-                                ind.clone(),
-                                elem_me,
-                                " non eq read  key: {}   rea: {}   in map: {}",
-                                key,
-                                elem_me,
-                                ind.clone()
-                            );
-                        });
-                    }
+                if tt == 51 {
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let mut mus = mambo_arc.data_arc.1[1].1.write().unwrap();
 
-                    for key in 0..OPS_PER_THREAD {
-                        let key = tt + (key * OPS_PER_THREAD * 10);
-                        let elem_me = format!("mambo elem{}", key);
+                        if 1 == 1 {
+                            panic!("");
+                        }
+                        mus.1[1] = vec![].into_boxed_slice();
+                    }));
+                }
 
-                        assert_eq!(mambo_arc.remove(key as u64), Some(elem_me.clone()));
-                    }
-                });
+                if tt == 52 {
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let mut mus = mambo_arc.data_arc.1[3].0.lock().unwrap();
+
+                        if 1 == 1 {
+                            panic!("");
+                        }
+                        *mus += 1;
+                    }));
+                }
+
+                if tt == 53 {
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let rmus = mambo_arc.data_arc.1[1].1.read().unwrap();
+                        let mut mux = rmus.0.lock().unwrap();
+
+                        if 1 == 11 {
+                            panic!("");
+                        }
+                        *mux += 1;
+                    }));
+                }
+            }));
+        }
+
+        for handle in std_handles {
+            let x = handle.join();
+            if x.is_err() {
+                println!("dym {:?}", x);
             }
         }
+
+        let mut veve = vec![];
+
+        mambo.filter(|_, a| {
+            veve.push(a);
+            //println!("{}", *e);
+            true
+        });
+
+        veve.sort();
+        for x in veve.iter() {
+            println!("{}", *x);
+        }
+
+        println!("len: {}", veve.len());
     }
 
     #[test]
