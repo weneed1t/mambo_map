@@ -4,7 +4,13 @@ mem,
 } set of the standard rust library
 
 ```rust
-   #[test]
+
+use mambo_map::Mambo;
+use std::{
+    sync::{Arc, Mutex},
+    thread,
+};
+
     fn based_example() {
         const NUM_THREADS: usize = 10;
         const OPS_PER_THREAD: usize = 10;
