@@ -4,4 +4,4 @@ version = 3
 
 [[package]]
 name = "mambo_map"
-version = "0.1.01"
+version = "0.1.1"

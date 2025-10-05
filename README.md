@@ -32,8 +32,14 @@ use std::{
         let mut mambo = Mambo::<String>::new(shards, elems_in_mutex).unwrap();
 
         for tt in 1..NUM_THREADS {
-            let mut mambo_arc = mambo.arc_clone();
             let arc_global_counter = Arc::clone(&global_counter);
+            //
+            //
+            /*mambo.clone().clone() because the mambo instance has local data that is individual
+            for each instance and global data that is stored in Arc() and shared by all threads.
+             to simplify the creation of a new instance, mambo.clone() is used.*/
+            let mut mambo_arc = mambo.clone(); //Trait Clone
+
             std_handles.push(thread::spawn(move || {
                 for key in 0..OPS_PER_THREAD {
                     let key = (tt + (key * OPS_PER_THREAD * 10)) + shift as usize;
@@ -134,6 +140,7 @@ use std::{
             true
         });
     }
+
 ```
 
 

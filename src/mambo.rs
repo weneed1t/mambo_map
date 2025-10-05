@@ -532,16 +532,7 @@ impl<T: Clone> Mambo<T> {
             .map(|(index, _)| index)
             .unwrap_or(0)
     }
-    /// Some of the Mambo structure data is thread-independent,
-    /// and each copy via arc_clone provides a convenient instance of the Mambo structure that can be used
-    /// in a new thread. all data regarding the elements of the Mambo hash table can be obtained from any
-    /// stream that has an instance of arc_clone.
-    pub fn arc_clone(&self) -> Self {
-        Self {
-            data_arc: Arc::clone(&self.data_arc),
-            how_edit_elem_without_update: vec![0; self.data_arc.1.len()].into_boxed_slice(),
-        }
-    }
+
     /// insert an element T with the key: u64.if there is already an element with the same key: u64 in the table,
     /// then when force_replace == true, the old element T will be replaced by the new element T,
     /// while the old element T will be returned as Some(T.clone()). if force_replace == false,
@@ -716,6 +707,20 @@ impl<T: Clone> Mambo<T> {
     }
 }
 
+impl<T: Clone> Clone for Mambo<T> {
+    /// Some of the Mambo structure data is thread-independent,
+    /// and each copy via arc_clone provides a convenient instance of the Mambo structure that can be used
+    /// in a new thread. all data regarding the elements of the Mambo hash table can be obtained from any
+    /// stream that has an instance of arc_clone.
+
+    fn clone(&self) -> Self {
+        Self {
+            data_arc: Arc::clone(&self.data_arc),
+            how_edit_elem_without_update: vec![0; self.data_arc.1.len()].into_boxed_slice(),
+        }
+    }
+}
+
 impl<T: Clone> Drop for Mambo<T> {
     ///  deleting a Mambo instance. Since Mambo uses only secure rust APIs,
     ///  it does not need to implement the Drop trace, but since when inserting
@@ -844,8 +849,14 @@ mod tests_n {
         let mut mambo = Mambo::<String>::new(shards, elems_in_mutex).unwrap();
 
         for tt in 1..NUM_THREADS {
-            let mut mambo_arc = mambo.arc_clone();
             let arc_global_counter = Arc::clone(&global_counter);
+            //
+            //
+            /*mambo.clone().clone() because the mambo instance has local data that is individual
+            for each instance and global data that is stored in Arc() and shared by all threads.
+             to simplify the creation of a new instance, mambo.clone() is used.*/
+            let mut mambo_arc = mambo.clone(); //Trait Clone
+
             std_handles.push(thread::spawn(move || {
                 for key in 0..OPS_PER_THREAD {
                     let key = (tt + (key * OPS_PER_THREAD * 10)) + shift as usize;
@@ -973,7 +984,7 @@ mod tests_n {
             for tt in 1..NUM_THREADS + 1 {
                 let barrier_clone = Arc::clone(&std_barrier);
 
-                let mut ra_clone = mambo.arc_clone();
+                let mut ra_clone = mambo.clone();
 
                 let handle = thread::spawn(move || {
                     barrier_clone.wait();
@@ -1068,7 +1079,7 @@ mod tests_n {
                 for _ in 0..num_treads {
                     let barrier_clone = Arc::clone(&std_barrier);
 
-                    let mut ra_clone = mambo.arc_clone();
+                    let mut ra_clone = mambo.clone();
 
                     let handle = thread::spawn(move || {
                         barrier_clone.wait();
@@ -1136,7 +1147,7 @@ mod tests_n {
             let mut std_handles = Vec::new();
 
             for tt in 1..NUM_THREADS + 1 {
-                let mut ra_clone = mambo.arc_clone();
+                let mut ra_clone = mambo.clone();
                 let uwls = Arc::clone(&uwelar);
                 thread::sleep(time::Duration::from_millis(2));
                 let handle = thread::spawn(move || {
@@ -1157,7 +1168,7 @@ mod tests_n {
                         }
 
                         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            let mut ra_clone = ra_clone.arc_clone();
+                            let mut ra_clone = ra_clone.clone();
                             // let _ = std::panic::take_hook();
                             for &yy in vec_keys_to_remove.iter() {
                                 ra_clone.read(yy, |x| {
@@ -1237,7 +1248,7 @@ mod tests_n {
         let mut mambo = Mambo::<String>::new(shards, elems_in_mutex).unwrap();
         let mut std_handles = Vec::new();
         for tt in 0..NUM_THREADS {
-            let mut mambo_arc = mambo.arc_clone();
+            let mut mambo_arc = mambo.clone();
 
             std_handles.push(thread::spawn(move || {
                 for key in 0..OPS_PER_THREAD {
@@ -1340,7 +1351,7 @@ mod tests_n {
         let cycles = 300u64;
         let mut i_key = 0;
         for xx in (1..cycles).step_by(1) {
-            let mut clom = mambo.arc_clone();
+            let mut clom = mambo.clone();
             //println!("{}", clom.elems_im_me().unwrap());
             for yy in 0..elem_in_cycle {
                 assert_eq!(clom.insert((yy * cycles * 100) + xx, &i_key, false), None);
