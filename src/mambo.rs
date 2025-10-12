@@ -1063,13 +1063,12 @@ mod tests_n {
             //const NUM_THREADS: usize = 50;
             let num_treads: usize = tre;
             const NUM_ELEMS: usize = 200;
-            const TOTAL_OPS: u64 = 500_000;
+            const TOTAL_OPS: u64 = 200_000;
             let ops_threads: u64 = TOTAL_OPS / num_treads as u64;
             {
-                let mut mambo = Mambo::<u64>::new(16, 10.0).unwrap();
+                let mut mambo = Mambo::<u64>::new(100, 1.0).unwrap();
                 let mut std_handles = Vec::new();
                 let std_start = Instant::now();
-                let std_barrier = Arc::new(std::sync::Barrier::new(num_treads + 1));
 
                 for i in 0..NUM_ELEMS {
                     let t = 0;
@@ -1077,13 +1076,9 @@ mod tests_n {
                 }
 
                 for _ in 0..num_treads {
-                    let barrier_clone = Arc::clone(&std_barrier);
-
                     let mut ra_clone = mambo.clone();
 
                     let handle = thread::spawn(move || {
-                        barrier_clone.wait();
-
                         for i in 0..ops_threads {
                             let mut od: u64 = i as u64;
                             for _ in 0..3 {
@@ -1099,28 +1094,24 @@ mod tests_n {
                     std_handles.push(handle);
                 }
 
-                std_barrier.wait();
-
                 for handle in std_handles {
                     handle.join().unwrap();
                 }
                 if true {
                     println!(
                         "| threads: {} | {} | M.op/S: {:.3} |",
-                        tre,
+                        if tre > 9 {
+                            format!("{}", tre)
+                        } else {
+                            format!("{} ", tre)
+                        },
                         " read  ",
-                        TOTAL_OPS as f64 / std_start.elapsed().as_micros() as f64
-                    );
-                } else {
-                    println!(
-                        "[{},  {:.3}]",
-                        tre,
                         TOTAL_OPS as f64 / std_start.elapsed().as_micros() as f64
                     );
                 }
             }
         }
-        // assert!(false);
+        //assert!(false);
     }
 
     #[test]
@@ -1377,5 +1368,65 @@ mod tests_n {
         assert_eq!(mambo.elems_im_me(), all_elem);
 
         // assert!(false);
+    }
+
+    #[test]
+    fn read_write_2() {
+        if !DEV_TEST && 1 == 1 {
+            return;
+        }
+        for tre in (1..20).step_by(1) {
+            //const NUM_THREADS: usize = 50;
+            let num_treads: usize = tre;
+            const NUM_ELEMS: usize = 4000;
+            const TOTAL_OPS: u64 = 5000_000;
+            let ops_threads: u64 = TOTAL_OPS / num_treads as u64;
+            {
+                let mut mambo = Mambo::<u64>::new(130, 10.0).unwrap();
+                let mut std_handles = Vec::new();
+                let std_start = Instant::now();
+
+                for i in 0..NUM_ELEMS {
+                    let t = 0;
+                    assert_eq!(mambo.insert(i as u64, &t, false), None);
+                }
+
+                for _ in 0..num_treads {
+                    let mut ra_clone = mambo.clone();
+
+                    let handle = thread::spawn(move || {
+                        for i in 0..ops_threads {
+                            let mut od: u64 = i as u64;
+                            for _ in 0..3 {
+                                od = od.rotate_left(43).wrapping_add(!i as u64);
+                            }
+                            let _ = ra_clone.read(od % NUM_ELEMS as u64, |x| {
+                                let x = x.unwrap();
+                                *x += 1;
+                            });
+                        }
+                    });
+
+                    std_handles.push(handle);
+                }
+
+                for handle in std_handles {
+                    handle.join().unwrap();
+                }
+                if true {
+                    println!(
+                        "| threads: {} | {} | M.op/S: {:.3} |",
+                        if tre > 9 {
+                            format!("{}", tre)
+                        } else {
+                            format!("{} ", tre)
+                        },
+                        " read  ",
+                        TOTAL_OPS as f64 / std_start.elapsed().as_micros() as f64
+                    );
+                }
+            }
+        }
+        assert!(false);
     }
 }

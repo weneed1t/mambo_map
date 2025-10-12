@@ -236,26 +236,26 @@ it may not be critical, but when there are few elements, when elems_im_me is cal
 it may return 0 even if there are elements in Mambo.
 This is a forced decision to increase productivity.
 
-## performance test in the --release version on the i7-11700f processor
+## performance test in the --release version on the i7-11700f processor shards:100, redream_factor:10.0
 
 |  threads    |  type   |millions op/ sec|
 | ----------- |:-------:| -------------- |
-| threads: 1  |  read   | M.op/S: 42.353 |
-| threads: 2  |  read   | M.op/S: 23.663 |
-| threads: 3  |  read   | M.op/S: 24.516 |
-| threads: 4  |  read   | M.op/S: 27.592 |
-| threads: 5  |  read   | M.op/S: 28.519 |
-| threads: 6  |  read   | M.op/S: 29.785 |
-| threads: 7  |  read   | M.op/S: 30.854 |
-| threads: 8  |  read   | M.op/S: 31.136 |
-| threads: 9  |  read   | M.op/S: 37.693 |
-| threads: 10 |  read   | M.op/S: 42.285 |
-| threads: 11 |  read   | M.op/S: 42.921 |
-| threads: 12 |  read   | M.op/S: 46.473 |
-| threads: 13 |  read   | M.op/S: 48.670 |
-| threads: 14 |  read   | M.op/S: 49.510 |
-| threads: 15 |  read   | M.op/S: 49.499 |
-| threads: 16 |  read   | M.op/S: 52.769 |
-| threads: 17 |  read   | M.op/S: 53.079 |
-| threads: 18 |  read   | M.op/S: 54.096 |
-| threads: 19 |  read   | M.op/S: 52.944 |
+| threads: 1  |  read   | M.op/S: 41.008 |
+| threads: 2  |  read   | M.op/S: 36.142 |
+| threads: 3  |  read   | M.op/S: 44.619 |
+| threads: 4  |  read   | M.op/S: 53.679 |
+| threads: 5  |  read   | M.op/S: 61.140 |
+| threads: 6  |  read   | M.op/S: 69.721 |
+| threads: 7  |  read   | M.op/S: 75.364 |
+| threads: 8  |  read   | M.op/S: 77.392 |
+| threads: 9  |  read   | M.op/S: 80.942 |
+| threads: 10 |  read   | M.op/S: 83.545 |
+| threads: 11 |  read   | M.op/S: 87.364 |
+| threads: 12 |  read   | M.op/S: 90.246 |
+| threads: 13 |  read   | M.op/S: 92.421 |
+| threads: 14 |  read   | M.op/S: 96.775 |
+| threads: 15 |  read   | M.op/S: 98.932 |
+| threads: 16 |  read   | M.op/S: 97.458 |
+| threads: 17 |  read   | M.op/S: 100.22 |
+| threads: 18 |  read   | M.op/S: 98.580 |
+| threads: 19 |  read   | M.op/S: 98.767 |
