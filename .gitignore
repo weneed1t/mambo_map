@@ -1,3 +1,6 @@
 *.history
 /.vscode
+/.trunk
 /target
+/.private_code_cleener
+/old

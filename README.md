@@ -180,12 +180,13 @@ at ->10.0 per 1 element costs are reduced to ~10 bytes per element)
 
 
 ```rust
-pub fn arc_clone(&self) -> Self
+///impl<T: Clone> Clone for Mambo<T> 
+pub fn clone(&self) -> Self
  ```
 Some of the Mambo structure data is thread-independent,
-and each copy via arc_clone provides a convenient instance of the Mambo structure that can be used
+and each copy via clone provides a convenient instance of the Mambo structure that can be used
 in a new thread. all data regarding the elements of the Mambo hash table can be obtained from any
-thread that has an instance of arc_clone.
+thread that has an instance of clone.
 
 
 ```rust
