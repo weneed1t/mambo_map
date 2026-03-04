@@ -237,6 +237,24 @@ it may not be critical, but when there are few elements, when elems_im_me is cal
 it may return 0 even if there are elements in Mambo.
 This is a forced decision to increase productivity.
 
+
+
+
+    ///`filter()` takes the closure `RFy`: FnMut(&mut T, u64) -> bool<br>
+    /// This closure is applied sequentially to all elements of Mambo. <br>
+    /// If FnMut(&mut T, u64) -> bool returns false for a specific element,<br>
+    ///  that element is deleted; if it returns true, that element is kept.<br>
+    /// While the filter is running,<br>
+    ///  it is not possible to apply functions that change the size of the shard blocked by the filter.<br>
+    
+```rust
+    pub fn filter<RFy>(&mut self, mut filtator: RFy)
+    where
+        RFy: FnMut(&mut T, u64) -> bool
+```
+
+
+
 ## performance test in the --release version on the i7-11700f processor shards:100, redream_factor:10.0
 
 |  threads    |  type   |millions op/ sec|
