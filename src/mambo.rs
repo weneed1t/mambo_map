@@ -2,6 +2,7 @@
 //#![allow(clippy::identity_op)]
 #![deny(clippy::indexing_slicing)]
 #![deny(clippy::unwrap_used)]
+#![deny(clippy::as_conversions)]
 
 use std::mem;
 use std::sync::{Arc, Mutex, RwLock, TryLockError};
@@ -73,7 +74,7 @@ pub const PRIME_NUMBERS_TO_TAB: [u64; 64] = [
     0xffffffffffffffc5_u64, // 62
 ];
 //================================================================--
-const EELEM_NUMS_TO_READ_IN_MUTEX: u64 = 1;
+const EELEM_NUMS_TO_READ_IN_MUTEX: u64 = 4;
 const DEFAULT_NEW_SHARD_SIZE: usize = 2;
 const SHRINK_THRESHOLD_FACTOR: f32 = 1.25;
 const FORE_THRESHOLD_FACTOR: f32 = 0.10;
@@ -119,6 +120,74 @@ fn test_how_call_resize() -> &'static Mutex<usize> {
 #[cfg(test)]
 fn test_how_break_call_resize() -> &'static Mutex<usize> {
     TEST_HOW_BREAK_CALL_RESIZE.get_or_init(|| Mutex::new(0))
+}
+
+/// SAFE INTEGER CONVERSION MACRO
+///
+/// This macro safely converts between integer types using TryFrom,
+/// preventing silent truncation or data loss.
+///
+/// STRATEGIES:
+/// 1. Result: Returns Result<T, &'static str> for use with the '?' operator.
+/// 2. Panic: Uses 'unwrap' or 'expect' for cases where failure is a bug.
+/// 3. Custom Error: Allows attaching a specific message to the error.
+///
+/// ARGUMENTS:
+/// - $x: The value to convert (e.g., ///key, u8::MAX).
+/// - $t: The target type (e.g., usize, i64).
+///
+/// USAGE EXAMPLES:
+///
+/// // A. Handle errors with '?'
+/// let idx = checked_cast!(key => usize)?;
+/// let idx = checked_cast!(key => usize, err "Key out of range")?;
+///
+/// // B. Panic on failure
+/// let val = checked_cast!(some_u64 => usize, unwrap);
+/// let val = checked_cast!(some_u64 => usize, expect "Should fit");
+///
+/// // C. In closures or logic blocks
+/// let is_valid = |p: u16| checked_cast!(p => usize, unwrap) < limit;
+///
+/// SAFETY:
+/// Uses TryFrom trait. Prefer the Result variant (?) for recoverable errors.
+/// Use expect/unwrap only when conversion is guaranteed by logic.
+#[macro_export]
+macro_rules! checked_cast {
+    // No extra actions - returns Result with default error message
+    ($x:expr => $t:ty) => {
+        $crate::checked_cast!($x => $t, return_result)
+    };
+
+    // Panic with custom message (for unrecoverable errors)
+    ($x:expr => $t:ty, expect $msg:expr) => {{
+        //use std::convert::TryInto;
+        <$t>::try_from($x).expect($msg)
+    }};
+
+    // Simple panic with default message (for quick prototyping)
+    ($x:expr => $t:ty, unwrap) => {{
+        use std::convert::TryInto;
+        <$t>::try_from($x).unwrap()
+    }};
+
+    // Returns Result with custom error (for use with ? operator)
+    ($x:expr => $t:ty, err $err:expr) => {{
+        //use std::convert::TryInto;
+        <$t>::try_from($x).map_err(|_| $err)
+    }};
+
+    // Returns Result with detailed default error message
+    ($x:expr => $t:ty, return_result) => {{
+        use std::convert::TryInto;
+        <$t>::try_from($x).map_err(|_| concat!(
+            "conversion failed: cannot cast `",
+            stringify!($x),
+            "` to `",
+            stringify!($t),
+            "`"
+        ))
+    }};
 }
 
 ///ONPLACE and WASMOVED are tags that cannot be touched;
@@ -201,7 +270,7 @@ impl<T: Clone> Mambo<T> {
                 const { assert!(!PANIC_POISONED_IN_MUTEX_AND_RWLOCK, "safe_mutex_elem is poisoned") };
                 let mut guard = poisoned.into_inner();
 
-                *i_non_save_edits = i_non_save_edits.checked_sub(guard.1.len() as i64).unwrap_or(0);
+                *i_non_save_edits = i_non_save_edits.checked_sub(checked_cast!(guard.1.len() => i64, expect "guard.1.len() conversion to i64 failed")).unwrap_or(0);
 
                 *guard = (ONPLACE, vec![]);
                 mutexer.clear_poison();
@@ -376,8 +445,8 @@ impl<T: Clone> Mambo<T> {
 
             for old_elem in &temp_old_mutexer.1 {
                 let v1_item = v1_new
-                    .get(old_elem.1 as usize % v1_new.len())
-                    .expect("v1_new access failed: index out of bounds during rehashing");
+    .get(checked_cast!(old_elem.1 => usize, expect "old_elem.1 conversion to usize failed") % v1_new.len())
+    .expect("v1_new access failed: index out of bounds during rehashing");
 
                 let edit_elem = how_edit_elem_without_update.get_mut(shard_index).expect(
                     "shard_index access failed: how_edit_elem_without_update index out of bounds",
@@ -393,7 +462,7 @@ impl<T: Clone> Mambo<T> {
             }
 
             //trash changes
-            *locker_resizer = locker_resizer.wrapping_add(temp_old_mutexer.1.len() as u32);
+            *locker_resizer = locker_resizer.wrapping_add(checked_cast!(temp_old_mutexer.1.len() => u32, expect "temp_old_mutexer.1.len() conversion to u32 failed"));
         }
     }
 
@@ -467,10 +536,11 @@ impl<T: Clone> Mambo<T> {
         F: FnOnce(&mut Vec<ElemBox<T>>) -> WhatIdo,
     {
         let mut shard_capasity = 0;
-        let shard_index = key % self.data_arc.1.len() as u64;
-        let shard = self.data_arc.1.get(shard_index as usize).expect(
-            "data_arc.1 access failed: shard_index is out of bounds for the current shard array",
-        );
+        let shard_index = key
+            % checked_cast!(self.data_arc.1.len() => u64, expect "data_arc.1.len() conversion to u64 failed");
+        let shard = self.data_arc.1.get(checked_cast!(shard_index => usize, expect "shard_index conversion to usize failed")).expect(
+    "data_arc.1 access failed: shard_index is out of bounds for the current shard array",
+);
 
         let mut is_edit = false;
         {
@@ -485,7 +555,7 @@ impl<T: Clone> Mambo<T> {
     .expect("r_lock.1 access failed: bitwise index x & 0b1 is out of bounds (expected array size of at least 2)");
 
                 if !vecta.is_empty() {
-                    let shard_idx = shard_index as usize;
+                    let shard_idx = checked_cast!(shard_index => usize, expect "shard_index conversion to usize failed");
 
                     // 1. Get the initial value safely
                     let temp_how_edit = *self.how_edit_elem_without_update
@@ -494,7 +564,7 @@ impl<T: Clone> Mambo<T> {
 
                     // 2. Safely obtain both the vector element and the mutable counter
                     let mut mutexer = Self::safe_mutex_elem(
-    vecta.get(key as usize % vecta.len())
+    vecta.get(checked_cast!(key => usize, expect "key conversion to usize failed") % vecta.len())
         .expect("vecta access failed: calculated index is out of bounds"),
     self.how_edit_elem_without_update
         .get_mut(shard_idx)
@@ -506,7 +576,7 @@ impl<T: Clone> Mambo<T> {
                     // operation, so is_edit = true; since counter
                     // synchronization may be required.
                     if temp_how_edit != *self.how_edit_elem_without_update
-    .get(shard_index as usize)
+    .get(checked_cast!(shard_index => usize, expect "shard_index conversion to usize failed"))
     .expect("how_edit_elem_without_update access failed: shard_index is out of bounds during final edit check") 
 {
     is_edit = true;
@@ -521,7 +591,7 @@ impl<T: Clone> Mambo<T> {
                             // changes
                             WhatIdo::Remove => {
                                 let counter = self.how_edit_elem_without_update
-        .get_mut(shard_index as usize)
+        .get_mut(checked_cast!(shard_index => usize, expect "shard_index conversion to usize failed"))
         .expect("how_edit_elem_without_update access failed: shard_index is out of bounds during Remove operation");
 
                                 *counter = counter
@@ -533,7 +603,7 @@ impl<T: Clone> Mambo<T> {
                             }
                             WhatIdo::Insert => {
                                 let counter = self.how_edit_elem_without_update
-        .get_mut(shard_index as usize)
+        .get_mut(checked_cast!(shard_index => usize, expect "shard_index conversion to usize failed"))
         .expect("how_edit_elem_without_update access failed: shard_index is out of bounds during Insert operation");
 
                                 *counter = counter
@@ -557,7 +627,7 @@ impl<T: Clone> Mambo<T> {
             }
         } //unlock read r_lock
         if is_edit {
-            self.is_resize_shard(shard_index as usize, shard_capasity, false);
+            self.is_resize_shard(checked_cast!(shard_index => usize, expect "shard_index conversion to usize failed"), shard_capasity, false);
             return;
         }
         panic!("access error, constant employment");
@@ -576,7 +646,10 @@ impl<T: Clone> Mambo<T> {
             is greater than usize::MAX. most likely, the usize on this device is 32 or 16 bits, which means that
             you can put the orientation points in MamboMambo(redream_factor* (usize:: MAX/4))");
 
-            self.resize_shard(shard_index, new_len as usize);
+            self.resize_shard(
+                shard_index,
+                checked_cast!(new_len => usize, expect "new_len conversion to usize failed"),
+            );
         }
     }
 
@@ -616,10 +689,17 @@ impl<T: Clone> Mambo<T> {
         // Early exit optimization: avoid expensive operations when conditions don't
         // warrant resize This prevents frequent resize operations for small,
         // low-concurrency workloads
+
+        #[allow(clippy::as_conversions)]
+        const ENTRIM_F32: f32 = EELEM_NUMS_TO_READ_IN_MUTEX as f32;
+        #[allow(clippy::as_conversions)]
+        let shard_capasity_f32: f32 = shard_capasity as f32;
+        #[allow(clippy::as_conversions)]
+        let arc_strong_ctr_f32: f32 = Arc::strong_count(&self.data_arc) as f32;
+
         if !force_edit_global_counter
             && shard_i.abs_diff(0) < EELEM_NUMS_TO_READ_IN_MUTEX
-            && (Arc::strong_count(&self.data_arc) as f32 * EELEM_NUMS_TO_READ_IN_MUTEX as f32)
-                < (shard_capasity as f32 * FORE_THRESHOLD_FACTOR)
+            && (arc_strong_ctr_f32 * ENTRIM_F32) < (shard_capasity_f32 * FORE_THRESHOLD_FACTOR)
         {
             return None;
         }
@@ -640,10 +720,10 @@ impl<T: Clone> Mambo<T> {
             // Positive values indicate net inserts, negative indicate net deletes
             if *shard_i > 0 {
                 *mutexer = mutexer
-                    .checked_add(shard_i.abs_diff(0) as usize)
-                    .expect("new_size_shard add is owerflow");
+        .checked_add(checked_cast!(shard_i.abs_diff(0) => usize, expect "shard_i.abs_diff(0) conversion to usize failed"))
+        .expect("new_size_shard add is overflow");
             } else {
-                *mutexer = mutexer.checked_sub(shard_i.abs_diff(0) as usize).unwrap_or(0);
+                *mutexer = mutexer.checked_sub(checked_cast!(shard_i.abs_diff(0) => usize, expect "shard_i.abs_diff(0) conversion to usize failed")).unwrap_or(0);
             }
             // Reset local counter now that changes are committed to global state
             *shard_i = 0;
@@ -654,7 +734,12 @@ impl<T: Clone> Mambo<T> {
         let index_my_prime = self.difer_index(shard_capasity);
         // Decision: Upsize if current load factor exceeds configured threshold
         // Load factor = elements / capacity, we add EPSILON to avoid division by zero
-        if elems_in_me as f32 / (shard_capasity as f32 + EPSILON) > self.data_arc.0 {
+        #[allow(clippy::as_conversions)]
+        let ele_inme_f32 = elems_in_me as f32;
+        #[allow(clippy::as_conversions)]
+        let shard_cap_f32 = shard_capasity as f32;
+
+        if ele_inme_f32 / (shard_cap_f32 + EPSILON) > self.data_arc.0 {
             // Only upsize if we have a larger prime available in our table
             if index_my_prime + 1 < PRIME_NUMBERS_TO_TAB.len() {
                 Some(
@@ -667,6 +752,7 @@ impl<T: Clone> Mambo<T> {
             }
         } else if index_my_prime > 0 {
             // Decision: Consider downsizing if we're not at the smallest prime size
+
             let t = *PRIME_NUMBERS_TO_TAB
                     .get(index_my_prime - 1)
                     .expect("PRIME_NUMBERS_TO_TAB access failed: index_my_prime is either 0 or exceeds the table bounds");
@@ -674,7 +760,9 @@ impl<T: Clone> Mambo<T> {
             // Downsizing heuristic: Only shrink if the new load factor would be comfortably
             // below the threshold even after applying a shrink safety margin
             // This prevents thrashing between sizes for borderline cases
-            if self.data_arc.0 > (elems_in_me as f32 * SHRINK_THRESHOLD_FACTOR) / t as f32 {
+            #[allow(clippy::as_conversions)]
+            let t_32 = t as f32;
+            if self.data_arc.0 > (ele_inme_f32 * SHRINK_THRESHOLD_FACTOR) / t_32 {
                 Some(t)
             } else {
                 None
@@ -686,7 +774,7 @@ impl<T: Clone> Mambo<T> {
     /// finds the index of the number closest to the target in
     /// `PRIME_NUMBER_TO_TAB`
     fn difer_index(&self, target: usize) -> usize {
-        let target = target as u64;
+        let target = checked_cast!(target => u64, expect "target conversion to u64 failed");
 
         PRIME_NUMBERS_TO_TAB
             .iter()
@@ -914,7 +1002,7 @@ impl<T: Clone> Mambo<T> {
             Most likely, the Rust compiler will not do such nasty things, but at the moment I am playing it safe,
             since the damage to performance from these operations is less than the margin of error.
             */
-            *locker_resizer = locker_resizer.wrapping_add(elems_in_shard as u32);
+            *locker_resizer = locker_resizer.wrapping_add(checked_cast!(elems_in_shard => u32, expect "elems_in_shard conversion to u32 failed"));
         }
         //for shard
     }
@@ -953,16 +1041,12 @@ impl<T: Clone> Drop for Mambo<T> {
             };
             ive.push(shard_capasity);
         }
-
-        for (shard_index, &shard_capasity) in ive.iter().enumerate() {
-            self.is_resize_shard(shard_index, shard_capasity, true);
-            //println!("drop{}", shard_index);
-        }
     }
 }
 
 #[cfg(test)]
 mod tests_n {
+    #![allow(clippy::as_conversions)]
     #![allow(clippy::indexing_slicing)]
     #![allow(clippy::unwrap_used)]
     use std::time::Instant;
